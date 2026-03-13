@@ -1,0 +1,40 @@
+version: "3.3"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: mcp
+      POSTGRES_USER: mcp
+      POSTGRES_PASSWORD: mcp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro
+
+  api:
+    build: .
+    environment:
+      MCP_PG_DSN: ${MCP_PG_DSN}
+      MCP_SHARED_SECRET: ${MCP_SHARED_SECRET}
+      MCP_JWT_SECRET: ${MCP_JWT_SECRET}
+      MCP_REFRESH_SECRET: ${MCP_REFRESH_SECRET}
+      MCP_HMAC_KEY: ${MCP_HMAC_KEY}
+      MCP_CORS_ORIGINS: ${MCP_CORS_ORIGINS}
+      ENABLE_MCP_SERVER: "true"
+      MCP_USE_STRICT_AUTH: "false"
+    depends_on:
+      - postgres
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "443:443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

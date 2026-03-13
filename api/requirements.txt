@@ -1,0 +1,17 @@
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+passlib[bcrypt]==1.7.4
+bcrypt==3.2.2
+python-jose[cryptography]==3.3.0
+pydantic>=2.8.0
+python-multipart>=0.0.9
+pycryptodome==3.20.0
+requests==2.32.3
+openai>=1.30.0
+anthropic>=0.25.0
+httpx>=0.25.0
+urllib3>=2.0.0
+markdown>=3.4.0
+mcp[cli]>=1.0.0

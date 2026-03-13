@@ -1,0 +1,8 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pyjwt
+httpx>=0.25.0
+pycryptodome
+requests
+pydantic>=2.8.0
+mcp[cli]>=1.0.0 

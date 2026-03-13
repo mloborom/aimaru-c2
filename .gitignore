@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+ENV/
+env/
+
+##Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+apikey.txt
+*.key
+*.crt
+*.pem
+
+# Database
+*.db
+*.sqlite
+*.sql.backup
+
+# Logs
+*.log
+logs/
+
+# Docker
+docker-compose.override.yml
+
+# Claude
+.claude/
+
+# Temp files
+*.tmp
+*.temp
+*.bak
+*_before
+*.old
+
+# Certificates (keep structure but not actual certs)
+certs/*.key
+certs/*.crt
+certs/*.pem
+
+# User-specific config
+claude_desktop_config.json
+
+# Backup files
+SQL/*.sql_before
+old/
+
+# Presentation files
+*.pptx
+*.pdf
+*.png
