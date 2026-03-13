@@ -1,0 +1,73 @@
+AIMARU-C2 Security Research License
+Copyright (c) 2025 AIMARU Project Contributors
+
+EDUCATIONAL AND AUTHORIZED SECURITY RESEARCH LICENSE
+
+This software is provided for educational purposes and authorized security
+research only. By using, copying, modifying, or distributing this software,
+you agree to the following terms:
+
+1. PERMITTED USE
+   ✓ Authorized penetration testing with written permission
+   ✓ Red team exercises within defined scope
+   ✓ CTF competitions and security training
+   ✓ Academic research in controlled environments
+   ✓ Defensive security research and detection engineering
+
+2. PROHIBITED USE
+   ✗ Unauthorized access to computer systems
+   ✗ Malicious deployment without authorization
+   ✗ Criminal activities or violation of laws
+   ✗ Production deployment without legal framework
+   ✗ Any use that violates local, state, or federal laws
+
+3. GRANT OF LICENSE
+   Subject to the terms and conditions of this license, you are granted a
+   non-exclusive, worldwide, royalty-free license to:
+   - Use, copy, and modify the software
+   - Distribute the software and modifications
+   - Create derivative works
+
+4. COPYLEFT REQUIREMENT
+   Any modifications or derivative works must be distributed under the same
+   license terms. You must:
+   - Make source code publicly available
+   - Include this license with all distributions
+   - Document all modifications clearly
+   - Provide attribution to original authors
+
+5. NO WARRANTY
+   THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS
+   FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+6. LIMITATION OF LIABILITY
+   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THIS SOFTWARE.
+
+7. LEGAL COMPLIANCE
+   Users are solely responsible for compliance with all applicable laws and
+   regulations. Unauthorized use may violate:
+   - Computer Fraud and Abuse Act (CFAA)
+   - EU Cybersecurity Directive
+   - Local computer crime laws
+   - Other applicable legislation
+
+8. ATTRIBUTION
+   You must retain all copyright notices and give appropriate credit to the
+   AIMARU Project contributors in any derivative works or publications.
+
+9. TERMINATION
+   This license automatically terminates if you violate any of its terms.
+   Upon termination, you must destroy all copies of the software.
+
+10. RESEARCH DISCLOSURE
+    If you use this software in security research that results in publications,
+    you should cite the AIMARU project appropriately.
+
+DISCLAIMER: This tool is designed to help security professionals understand
+modern C2 techniques and develop appropriate defenses. The authors do not
+condone or support malicious use.
+
+For questions about licensing or authorized use, please contact the project
+maintainers through the official GitHub repository.
