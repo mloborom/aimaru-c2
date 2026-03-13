@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/AImaru_logo.png" alt="AIMARU Logo" width="200"/>
+<img src=".github/AImaru.png" alt="AIMARU Logo" width="200"/>
 
 # AIMARU MCP Platform
 
@@ -221,63 +221,45 @@ Time: 3.5 minutes (vs 15 min traditional)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    AIMARU MCP PLATFORM                       │
+│                    AIMARU MCP PLATFORM                      │
 ├─────────────────────────────────────────────────────────────┤
-│                                                              │
+│                                                             │
 │  PowerShell Client (Target)                                 │
-│         ↓                                                    │
-│  [1] HKDF-SHA256 Key Derivation                            │
-│         ↓                                                    │
+│         ↓                                                   │
+│  [1] HKDF-SHA256 Key Derivation                             │
+│         ↓                                                   │
 │  [2] AES-256-CBC Encryption + HMAC-SHA256                   │
-│         ↓                                                    │
+│         ↓                                                   │
 │  [3] MCP Protocol (appears as LLM API call)                 │
-│         ↓                                                    │
-│  ┌──────────────────────────────────────────┐              │
-│  │      FastAPI Gateway (Port 443)          │              │
-│  ├──────────────────────────────────────────┤              │
-│  │  • Validate HMAC                         │              │
-│  │  • Decrypt AES-256-CBC                   │              │
-│  │  • Extract command                       │              │
-│  └──────────────────────────────────────────┘              │
-│         ↓                                                    │
-│  ┌──────────────────────────────────────────┐              │
-│  │   LLM Service (OpenAI/Anthropic)         │              │
-│  ├──────────────────────────────────────────┤              │
-│  │  • Auto-Iteration Engine                 │              │
-│  │  • Failed Command Tracking               │              │
-│  │  • Complexity Escalation (0→4)           │              │
-│  │  • LOLBin Selection                      │              │
-│  └──────────────────────────────────────────┘              │
-│         ↓                                                    │
+│         ↓                                                   │
+│  ┌──────────────────────────────────────────┐               │
+│  │      FastAPI Gateway (Port 443)          │               │
+│  ├──────────────────────────────────────────┤               │
+│  │  • Validate HMAC                         │               │
+│  │  • Decrypt AES-256-CBC                   │               │
+│  │  • Extract command                       │               │
+│  └──────────────────────────────────────────┘               │
+│         ↓                                                   │
+│  ┌──────────────────────────────────────────┐               │
+│  │   LLM Service (OpenAI/Anthropic)         │               │
+│  ├──────────────────────────────────────────┤               │
+│  │  • Auto-Iteration Engine                 │               │
+│  │  • Failed Command Tracking               │               │
+│  │  • Complexity Escalation (0→4)           │               │
+│  │  • LOLBin Selection                      │               │
+│  └──────────────────────────────────────────┘               │
+│         ↓                                                   │
 │  [4] Command Execution on Target                            │
-│         ↓                                                    │
+│         ↓                                                   │
 │  [5] Encrypt Response (AES-256-CBC + HMAC)                  │
-│         ↓                                                    │
+│         ↓                                                   │
 │  [6] Return to Operator                                     │
-│                                                              │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 
 Tech Stack: FastAPI • PostgreSQL • React 18 • TypeScript • Docker
 Crypto: AES-256-CBC • HMAC-SHA256 • HKDF-SHA256 (crypto.py)
 ```
-
----
-
-## 📊 Performance Metrics
-
-<div align="center">
-
-| Metric | Traditional C2 | AIMARU | Improvement |
-|--------|---------------|---------|-------------|
-| **Time-to-Objective** | ~15 min | ~3.5 min | **73% faster** |
-| **Operator Actions** | 12-18 commands | 1-2 requests | **92% reduction** |
-| **Failed Cmd Recovery** | 2-5 min (manual) | <30 sec (auto) | **85% faster** |
-| **C2 Detection Rate** | 78% | <5% | **94% reduction** |
-| **LOLBin Success** | 34% (manual) | 87% (AI-driven) | **156% improvement** |
-
-*Controlled lab testing against common EDR solutions*
-
-</div>
 
 ---
 
@@ -307,19 +289,6 @@ Crypto: AES-256-CBC • HMAC-SHA256 • HKDF-SHA256 (crypto.py)
 - **[Security Implementation](TECHNICAL_USER_GUIDE_PART3.md#8-security-implementation)** - Encryption & authentication details
 - **[Troubleshooting](TECHNICAL_USER_GUIDE_PART3.md#9-troubleshooting-guide)** - Common issues and solutions
 - **[Detection Rules](TECHNICAL_USER_GUIDE_PART3.md)** - Sigma rules and network signatures
-
----
-
-## 🎭 Black Hat Arsenal
-
-AIMARU will be presented at **Black Hat Arsenal** as a demonstration of:
-
-✨ **First MCP-as-RAT Implementation** - Novel threat paradigm using AI infrastructure
-🔐 **Military-Grade Encryption** - AES-256-CBC + HMAC-SHA256 + HKDF-SHA256
-🤖 **Autonomous Agentic Auto-Iteration** - Self-learning command escalation
-🛡️ **Defensive Research Value** - Detection strategies for AI-powered C2
-
-**[View Arsenal Submission →](ARSENAL_SUBMISSION_1PAGE.md)**
 
 ---
 
@@ -374,17 +343,6 @@ AIMARU enables blue team research by providing:
    ├─ EDR behavioral rules
    ├─ Cryptographic traffic analysis
    └─ AI-aware detection strategies
-```
-
-### Research Contributions
-
-- 🥇 **First C2 framework using MCP as encrypted RAT channel**
-- 🥇 **First autonomous agentic auto-iteration implementation**
-- 🔐 **Novel cryptographic protocol within MCP layer**
-- 🤖 **LLM-driven LOLBin selection approach**
-- 📊 **Baseline for "AI vs AI" defensive research**
-
-**[View Research Paper →](BLACK_HAT_ARSENAL.md#research-contributions)**
 
 ---
 
@@ -509,7 +467,6 @@ Contributions are welcome! Please ensure all contributions follow security best 
 If you find this project valuable for security research, please consider:
 - ⭐ Starring the repository
 - 🐛 Reporting issues
-- 📖 Improving documentation
 - 🔬 Contributing defensive detection rules
 
 ---
