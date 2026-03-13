@@ -15,7 +15,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-latest-009688.svg)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-18-61DAFB.svg)](https://reactjs.org/)
 
-**[Quick Start](#-quick-start)** • **[Documentation](#-documentation)** • **[Features](#-key-features)** • **[Arsenal](#-black-hat-arsenal)** • **[Security](#-security-notice)**
+**[Quick Start](#-quick-start)** • **[Documentation](#-documentation)** • **[Features](#-key-features)** •• **[Security](#-security-notice)**
 
 ---
 
@@ -274,12 +274,9 @@ Crypto: AES-256-CBC • HMAC-SHA256 • HKDF-SHA256 (crypto.py)
 | Document | Description | Pages |
 |----------|-------------|-------|
 | **[TECHNICAL_USER_GUIDE.md](TECHNICAL_USER_GUIDE.md)** | Part 1: Architecture & API Reference | 48 |
-| **[TECHNICAL_USER_GUIDE_PART2.md](TECHNICAL_USER_GUIDE_PART2.md)** | Part 2: Features & Operations | 34 |
-| **[TECHNICAL_USER_GUIDE_PART3.md](TECHNICAL_USER_GUIDE_PART3.md)** | Part 3: Security & Troubleshooting | 33 |
 | **[TECHNICAL_USER_GUIDE_INDEX.md](TECHNICAL_USER_GUIDE_INDEX.md)** | Master Index & Navigation | 12 |
 | **[QUICK_START_AGENTIC_ITERATION.md](QUICK_START_AGENTIC_ITERATION.md)** | Auto-Iteration Quick Start | 9 |
 | **[CRYPTO_ARCHITECTURE_SUMMARY.md](CRYPTO_ARCHITECTURE_SUMMARY.md)** | Cryptographic Deep-Dive | - |
-| **[BLACK_HAT_ARSENAL.md](BLACK_HAT_ARSENAL.md)** | Arsenal Presentation Materials | - |
 | **[FILE_MANIFEST.md](FILE_MANIFEST.md)** | Complete File Inventory | - |
 
 **Total**: 150+ pages of comprehensive technical documentation
@@ -439,7 +436,6 @@ aimaru-mcp/
 ├── docker-compose.yml      # Container orchestration
 └── Documentation/
     ├── TECHNICAL_USER_GUIDE*.md
-    ├── BLACK_HAT_ARSENAL.md
     └── CRYPTO_ARCHITECTURE_SUMMARY.md
 ```
 
