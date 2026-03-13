@@ -53,6 +53,45 @@ In Andean cosmology, the Amaru is a great two-headed serpent that moves between 
 
 ---
 
+## 🎬 Platform Features
+
+<div align="center">
+
+### Interactive Dashboard & Capabilities
+
+<table>
+<tr>
+<td align="center" width="30%">
+<img src="images/AI-C&C.png" alt="AI-Powered C2 Interface" width="450"/><br/>
+<sub><b>AI-Powered C2 Interface</b> - Natural language command execution with autonomous iteration</sub>
+</td>
+<td align="center" width="30%">
+<img src="images/dashboard2.png" alt="Real-time Dashboard" width="450"/><br/>
+<sub><b>Real-time Monitoring Dashboard</b> - Live session tracking and command history</sub>
+</td>
+</tr>
+<tr>
+<td align="center" width="30%">
+<img src="images/builderv2.png" alt="Client Builder" width="450"/><br/>
+<sub><b>PowerShell Client Builder</b> - Automated obfuscation and deployment</sub>
+</td>
+<td align="center" width="30%">
+<img src="images/AMSIBP.png" alt="AMSI Bypass Generator" width="450"/><br/>
+<sub><b>AMSI Bypass Generator</b> - Dynamic evasion technique generation</sub>
+</td>
+</tr>
+<tr>
+<td align="center" colspan="2">
+<img src="images/client.png" alt="Client Management" width="450"/><br/>
+<sub><b>Multi-Client Management</b> - Orchestrate multiple targets simultaneously</sub>
+</td>
+</tr>
+</table>
+
+</div>
+
+---
+
 ## ⚡ Quick Start
 
 ### Prerequisites
