@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/AImaru.png" alt="AIMARU Logo" width="200"/>
+<img src=".github/AImaru.png" alt="AIMARU Logo" width="300"/>
 
 # AIMARU MCP Platform
 
@@ -23,7 +23,11 @@
 
 ## 🎯 Overview
 
-AIMARU introduces **Model Context Protocol (MCP) as an encrypted Remote Access Trojan (RAT) paradigm**, fundamentally reimagining command and control architecture. When commands fail, the system **autonomously escalates** through five complexity levels—from PowerShell cmdlets to WMI queries to LOLBins—without operator intervention.
+AIMARU-C2 is a robust autonomous Red Team framework designed to operationalize the Model-Context Protocol (MCP), evolving the foundational concepts of AI-driven C2 into a self-healing, agentic ecosystem. AIMARU introduces Model Context Protocol (MCP) as an encrypted Remote Access Trojan (RAT) paradigm, fundamentally reimagining command and control architecture. When commands fail, the system autonomously escalates through several complexity levels—from PowerShell cmdlets to WMI queries to LOLBins—without operator intervention.
+
+The framework is built to abstract all technical complexity, enabling an operator to function as a strategic commander by issuing high-level intent in natural language while the AI autonomously manages the underlying execution.
+
+In Andean cosmology, the Amaru is a great two-headed serpent that moves between the realms of the universe—emerging from the depths of the underworld to the world above. The Amaru represents hidden power capable of disrupting the natural order using the land powers.  Like the mythical serpent, AImaru lives "off the land," hiding within legitimate system processes—the digital underground—before surfacing suddenly to execute coordinated actions.
 
 ### 🔬 Technical Innovation
 
