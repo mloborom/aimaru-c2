@@ -453,16 +453,6 @@ Contributions are welcome! Please ensure all contributions follow security best 
 
 ---
 
-## 📞 Contact & Support
-
-<div align="center">
-
-**GitHub**: [aimaru-mcp](https://github.com/[username]/aimaru-mcp)
-**Research**: "Living Off the MCP: Using AI Infrastructure for C2 Communications"
-**Issues**: [GitHub Issues](https://github.com/[username]/aimaru-mcp/issues)
-
----
-
 ### 🌟 Show Your Support
 
 If you find this project valuable for security research, please consider:
@@ -482,7 +472,7 @@ If you find this project valuable for security research, please consider:
 
 ## 📜 License
 
-This project is licensed for **educational and authorized security testing purposes only**.
+This project is Licensed GPL-3.0 for **educational and authorized security testing purposes only**.
 
 See [LICENSE](LICENSE) file for details and full legal disclaimer.
 
