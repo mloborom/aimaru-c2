@@ -343,6 +343,7 @@ AIMARU enables blue team research by providing:
    ├─ EDR behavioral rules
    ├─ Cryptographic traffic analysis
    └─ AI-aware detection strategies
+```
 
 ---
 
