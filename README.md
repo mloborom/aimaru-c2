@@ -27,7 +27,7 @@ AIMARU-C2 is a robust autonomous Red Team framework designed to operationalize t
 
 The framework is built to abstract all technical complexity, enabling an operator to function as a strategic commander by issuing high-level intent in natural language while the AI autonomously manages the underlying execution.
 
-In Andean cosmology, the Amaru is a great two-headed serpent that moves between the realms of the universe—emerging from the depths of the underworld to the world above. The Amaru represents hidden power capable of disrupting the natural order using the land powers.  Like the mythical serpent, AImaru lives "off the land," hiding within legitimate system processes—the digital underground—before surfacing suddenly to execute coordinated actions.
+In Andean cosmology, the Amaru is a great serpent that moves between the realms of the universe—emerging from the depths of the underworld to the world above. The Amaru represents hidden power capable of disrupting the natural order using the land powers.  Like the mythical serpent, AImaru lives "off the land," hiding within legitimate system processes—the digital underground—before surfacing suddenly to execute coordinated actions.
 
 ### 🔬 Technical Innovation
 
@@ -106,8 +106,8 @@ In Andean cosmology, the Amaru is a great two-headed serpent that moves between 
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/[username]/aimaru-mcp.git
-cd aimaru-mcp
+git clone https://github.com/mloborom/aimaru-c2.git
+cd aimaru-c2
 
 # 2. Configure environment
 cp .env.example .env

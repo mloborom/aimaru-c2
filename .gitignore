@@ -74,3 +74,9 @@ old/
 # Presentation files
 *.pptx
 *.pdf
+
+#System
+.python-version
+.python*
+
+AMSI/*.ps1
