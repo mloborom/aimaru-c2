@@ -79,4 +79,4 @@ old/
 .python-version
 .python*
 
-AMSI/*.ps1
+AMSI/INvoke_AS4MS1_alt4.ps1
