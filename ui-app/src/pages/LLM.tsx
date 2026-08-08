@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
+import type { LlmProviderMeta } from '../api'
 
-type Cfg = { 
-  id: string; 
-  name: string; 
-  provider: string; 
-  model: string; 
-  temperature: number; 
+type Cfg = {
+  id: string;
+  name: string;
+  provider: string;
+  model: string;
+  base_url?: string;
+  temperature: number;
   is_active: boolean;
   created_at?: string;
   owner_user_id?: string;
@@ -21,12 +23,14 @@ export default function LLM(){
   const { token, api } = useAuth()
   const [rows, setRows] = useState<Cfg[]>([])
   const [editingRows, setEditingRows] = useState<Record<string, EditingConfig>>({})
-  const [form, setForm] = useState({ 
-    name: '', 
-    provider: 'openai', 
-    model: 'gpt-4o-mini', 
-    api_key: '', 
-    temperature: 0.2 
+  const [providers, setProviders] = useState<Record<string, LlmProviderMeta>>({})
+  const [form, setForm] = useState({
+    name: '',
+    provider: 'openai',
+    model: 'gpt-4o-mini',
+    api_key: '',
+    base_url: '',
+    temperature: 0.2
   })
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
@@ -54,7 +58,12 @@ export default function LLM(){
     finally { setLoading(false) }
   }
   
-  useEffect(()=>{ load() },[token])
+  useEffect(() => {
+    load()
+    if (token) {
+      api.llmProviders().then(setProviders).catch(() => {})
+    }
+  }, [token])
 
   const activeCount = useMemo(()=> rows.filter(r=>r.is_active).length, [rows])
 
@@ -71,17 +80,19 @@ export default function LLM(){
     setLoading(true)
     setErr('')
     
-    try { 
+    try {
       await api.llmCreate({
         ...form,
+        base_url: form.base_url.trim() || undefined,
         is_active: true
       })
-      setForm({ 
-        name: '', 
-        provider: 'openai', 
-        model: 'gpt-4o-mini', 
-        api_key: '', 
-        temperature: 0.2 
+      setForm({
+        name: '',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        api_key: '',
+        base_url: '',
+        temperature: 0.2
       })
       await load()
     }
@@ -130,7 +141,8 @@ export default function LLM(){
         provider: editConfig.provider,
         model: editConfig.model,
         temperature: editConfig.temperature,
-        ...(editConfig.api_key && { api_key: editConfig.api_key }) // Only include if provided
+        base_url: editConfig.base_url?.trim() || undefined,
+        ...(editConfig.api_key && { api_key: editConfig.api_key })
       })
       
       cancelEdit(id)
@@ -239,9 +251,10 @@ export default function LLM(){
 
   const maskApiKey = (provider: string) => {
     switch(provider) {
-      case 'openai': return 'sk-...••••••••••••••••••••••••••••••••••••••••••••••••'
+      case 'openai':    return 'sk-...••••••••••••••••••••••••••••••••••••••••••••••••'
       case 'anthropic': return 'sk-ant-...••••••••••••••••••••••••••••••••••••••••••'
-      default: return '••••••••••••••••••••••••••••••••••••••••••••••••••••••'
+      case 'zhipu':     return 'sk-...••••••••••••••••••••••••••••••••••••••••••••••••'
+      default:          return '••••••••••••••••••••••••••••••••••••••••••••••••••••••'
     }
   }
 
@@ -316,10 +329,18 @@ export default function LLM(){
             <select
               className="w-full rounded-lg px-3 py-2"
               value={form.provider}
-              onChange={e=>setForm(s=>({...s, provider:e.target.value}))}
+              onChange={e => setForm(s => ({ ...s, provider: e.target.value, model: providers[e.target.value]?.models[0] || '', base_url: '' }))}
             >
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic (Claude)</option>
+              {Object.entries(providers).length > 0
+                ? Object.entries(providers).map(([key, meta]) => (
+                    <option key={key} value={key}>{meta.display}</option>
+                  ))
+                : <>
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="zhipu">Zhipu AI (GLM)</option>
+                  </>
+              }
             </select>
           </div>
 
@@ -327,13 +348,15 @@ export default function LLM(){
             <label className="block text-sm font-medium mb-1" style={{color: 'var(--aimaru-text)'}}>Model</label>
             <input
               className="w-full rounded-lg px-3 py-2"
-              placeholder="gpt-4o-mini"
+              placeholder={providers[form.provider]?.models[0] || 'gpt-4o-mini'}
               value={form.model}
               onChange={e=>setForm(s=>({...s, model:e.target.value}))}
             />
-            <div className="text-xs mt-1" style={{color: 'var(--aimaru-text-dim)'}}>
-              e.g., gpt-4o-mini, gpt-4, claude-3-sonnet-20240229
-            </div>
+            {providers[form.provider]?.models && (
+              <div className="text-xs mt-1" style={{color: 'var(--aimaru-text-dim)'}}>
+                Suggested: {providers[form.provider].models.join(', ')}
+              </div>
+            )}
           </div>
 
           <div>
@@ -360,9 +383,26 @@ export default function LLM(){
             onChange={e=>setForm(s=>({...s, api_key:e.target.value}))}
           />
           <div className="text-xs mt-1" style={{color: 'var(--aimaru-text-dim)'}}>
-            Your API key will be stored securely and encrypted
+            Stored encrypted — never exposed in plaintext
           </div>
         </div>
+
+        {providers[form.provider]?.default_base_url !== undefined && (
+          <div>
+            <label className="block text-sm font-medium mb-1" style={{color: 'var(--aimaru-text)'}}>
+              Base URL
+              <span className="ml-2 text-xs font-normal" style={{color: 'var(--aimaru-text-dim)'}}>
+                (pre-filled from provider default — override if needed)
+              </span>
+            </label>
+            <input
+              className="w-full rounded-lg px-3 py-2 font-mono text-sm"
+              placeholder={providers[form.provider].default_base_url || 'https://api.openai.com/v1'}
+              value={form.base_url || providers[form.provider].default_base_url || ''}
+              onChange={e=>setForm(s=>({...s, base_url:e.target.value}))}
+            />
+          </div>
+        )}
 
         <button
           type="submit"
@@ -428,8 +468,16 @@ export default function LLM(){
                           value={editing.provider}
                           onChange={e => updateEditField(r.id, 'provider', e.target.value)}
                         >
-                          <option value="openai">OpenAI</option>
-                          <option value="anthropic">Anthropic (Claude)</option>
+                          {Object.entries(providers).length > 0
+                            ? Object.entries(providers).map(([key, meta]) => (
+                                <option key={key} value={key}>{meta.display}</option>
+                              ))
+                            : <>
+                                <option value="openai">OpenAI</option>
+                                <option value="anthropic">Anthropic (Claude)</option>
+                                <option value="zhipu">Zhipu AI (GLM)</option>
+                              </>
+                          }
                         </select>
                       </div>
 
@@ -468,6 +516,23 @@ export default function LLM(){
                         onChange={e => updateEditField(r.id, 'api_key', e.target.value)}
                       />
                     </div>
+
+                    {providers[editing.provider]?.default_base_url !== undefined && (
+                      <div>
+                        <label className="block text-sm font-medium mb-1" style={{color: 'var(--aimaru-text)'}}>
+                          Base URL
+                          <span className="ml-2 text-xs font-normal" style={{color: 'var(--aimaru-text-dim)'}}>
+                            (override endpoint URL)
+                          </span>
+                        </label>
+                        <input
+                          className="w-full rounded px-3 py-2 font-mono text-sm"
+                          placeholder={providers[editing.provider].default_base_url || ''}
+                          value={editing.base_url || providers[editing.provider]?.default_base_url || ''}
+                          onChange={e => updateEditField(r.id, 'base_url', e.target.value)}
+                        />
+                      </div>
+                    )}
                   </div>
                 ) : (
                   // View Mode
@@ -549,6 +614,12 @@ export default function LLM(){
                             <span className="font-medium" style={{color: 'var(--aimaru-text)'}}>Owner:</span>
                             <div className="mt-1" style={{color: 'var(--aimaru-text-dim)'}}>{r.owner_user_id || 'System'}</div>
                           </div>
+                          {r.base_url && (
+                            <div className="md:col-span-2">
+                              <span className="font-medium" style={{color: 'var(--aimaru-text)'}}>Base URL:</span>
+                              <div className="font-mono text-xs mt-1" style={{color: 'var(--aimaru-text-dim)'}}>{r.base_url}</div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -573,7 +644,7 @@ export default function LLM(){
               <div className="font-medium text-lg" style={{color: 'var(--aimaru-text)'}}>No LLM configurations yet</div>
               <div className="text-sm mt-2">Add your first API key above to enable AI chat features</div>
               <div className="text-xs mt-2" style={{color: 'var(--aimaru-text-dim)'}}>
-                Supported providers: OpenAI (GPT models) and Anthropic (Claude models)
+                Supported: OpenAI, Anthropic (Claude), Zhipu AI (GLM) — more via registry
               </div>
             </div>
           )}

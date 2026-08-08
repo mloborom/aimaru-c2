@@ -13,8 +13,9 @@ from sqlalchemy.orm import Session
 
 from .deps import get_db
 from .auth_dep import require_role
-from . import models 
+from . import models
 from .models import Instruction, LLMConfig, ClientChatSession, ChatMessage, User
+from .llm_service import PROVIDER_REGISTRY
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -24,6 +25,19 @@ LlmConfig = models.LLMConfig
 ClientChatMessage = models.ChatMessage  # Use ChatMessage from models
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
+
+# ---------- provider registry ----------
+@router.get("/providers")
+def get_providers():
+    """Return the registered LLM providers so the frontend can build dropdowns dynamically."""
+    return {
+        key: {
+            "display": meta["display"],
+            "models": meta["models"],
+            "default_base_url": meta["default_base_url"],
+        }
+        for key, meta in PROVIDER_REGISTRY.items()
+    }
 
 # ---------- helpers ----------
 def now_utc():
@@ -148,25 +162,29 @@ def create_config(
     model = payload.get("model")
     api_key = payload.get("api_key")
     temperature = payload.get("temperature", 0.2)
-    
+    base_url = payload.get("base_url") or None
+
     # Handle both 'active' and 'is_active' from frontend
     is_active = payload.get("is_active", payload.get("active", True))
-    
+
     if not all([name, provider, model, api_key]):
         raise HTTPException(400, "name, provider, model, and api_key are required")
-    
+
+    if provider not in PROVIDER_REGISTRY:
+        raise HTTPException(400, f"Unsupported provider. Valid: {list(PROVIDER_REGISTRY)}")
+
     if not isinstance(temperature, (int, float)) or temperature < 0 or temperature > 2:
         raise HTTPException(400, "temperature must be a number between 0 and 2")
-    
+
     try:
-        # Create LLM config with correct field names
         row = LLMConfig(
             name=name,
             provider=provider,
             model=model,
+            base_url=base_url,
             temperature=float(temperature),
             is_active=bool(is_active),
-            owner_user_id=user.id    # Use owner_user_id, not created_by
+            owner_user_id=user.id
         )
         
         # Use the set_api_key method to encrypt the API key
@@ -541,8 +559,8 @@ def legacy_register(
     user: User = Depends(require_role('admin')),
     db: Session = Depends(get_db)
 ):
-    # choose a default model per provider
-    model = "gpt-4o-mini" if provider.lower() == "openai" else "unknown"
+    meta = PROVIDER_REGISTRY.get(provider.lower(), {})
+    model = meta.get("models", ["unknown"])[0]
     name = f"{provider} default"
 
     row = LlmConfig(
@@ -594,20 +612,24 @@ def update_config_user(
     
     # Update fields if provided
     name = payload.get("name")
-    provider = payload.get("provider") 
+    provider = payload.get("provider")
     model = payload.get("model")
     temperature = payload.get("temperature")
     api_key = payload.get("api_key")
-    
+    base_url = payload.get("base_url")
+
     if name is not None:
         if not name.strip():
             raise HTTPException(400, "Name cannot be empty")
         config.name = str(name).strip()
-    
+
     if provider is not None:
-        if provider not in ["openai", "anthropic"]:
-            raise HTTPException(400, "Provider must be 'openai' or 'anthropic'")
+        if provider not in PROVIDER_REGISTRY:
+            raise HTTPException(400, f"Unsupported provider. Valid: {list(PROVIDER_REGISTRY)}")
         config.provider = str(provider)
+
+    if base_url is not None:
+        config.base_url = str(base_url).strip() if base_url.strip() else None
     
     if model is not None:
         if not model.strip():

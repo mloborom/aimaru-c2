@@ -47,10 +47,11 @@ export type ResultView = {
 export type LlmConfig = {
   id: string
   name: string
-  provider: 'openai' | 'anthropic' | string
+  provider: 'openai' | 'anthropic' | 'zhipu' | string
   model: string
+  base_url?: string
   temperature: number
-  is_active: boolean  // Changed from 'active' to 'is_active'
+  is_active: boolean
   created_at?: string
   owner_user_id?: string
 }
@@ -60,8 +61,15 @@ export type NewLlmConfig = {
   provider: string
   model: string
   api_key: string
+  base_url?: string
   temperature?: number
-  is_active?: boolean  // Changed from 'active' to 'is_active'
+  is_active?: boolean
+}
+
+export type LlmProviderMeta = {
+  display: string
+  models: string[]
+  default_base_url: string | null
 }
 
 // Updated Chat types to match new chat system
@@ -278,6 +286,10 @@ export class Api {
   }
 
   // ----------------- LLM Configs (Updated) -----------------
+  llmProviders() {
+    return this.call('/api/llm/providers') as Promise<Record<string, LlmProviderMeta>>
+  }
+
   llmConfigs() {
     return this.call('/api/llm/configs').then((response: any) => {
       // Handle both array and {configs: []} response formats

