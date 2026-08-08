@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
@@ -11,42 +12,81 @@ from .chat_tools import AVAILABLE_TOOLS, execute_tool_by_name, get_intelligent_s
 
 log = logging.getLogger(__name__)
 
+# ─── Provider Registry ────────────────────────────────────────────────────────
+# To add a provider: one entry here, no other code changes needed.
+# api_compat="openai"     → OpenAI SDK with optional base_url override
+# api_compat="anthropic"  → Anthropic SDK with optional base_url override
+#                           (use for Anthropic-compatible proxies like z.ai)
+PROVIDER_REGISTRY: Dict[str, Dict[str, Any]] = {
+    "openai": {
+        "api_compat": "openai",
+        "default_base_url": None,
+        "display": "OpenAI",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+    },
+    "anthropic": {
+        "api_compat": "anthropic",
+        "default_base_url": None,
+        "display": "Anthropic (Claude)",
+        "models": ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+    },
+    "zhipu": {
+        # GLM restricts tool calling on the OpenAI-compat API.
+        # z.ai exposes an Anthropic-compat proxy that supports full tool use.
+        "api_compat": "anthropic",
+        "default_base_url": "https://api.z.ai/api/anthropic",
+        "display": "Zhipu AI (GLM) via z.ai",
+        "models": ["glm-5.2", "glm-4", "glm-4-plus", "glm-4-flash"],
+    },
+}
+
 class LLMService:
     def __init__(self, llm_config: LLMConfig):
         self.config = llm_config
         self.client = self._create_client()
     
     def _create_client(self):
-        """Create the appropriate LLM client based on provider"""
-        # Use the get_api_key() method to properly decrypt the API key
+        """Create the appropriate LLM client based on the provider registry"""
         try:
             api_key = self.config.get_api_key()
         except Exception as e:
             log.error(f"[llm] Failed to decrypt API key for config {self.config.id}: {e}")
             raise ValueError(f"Failed to decrypt API key: {str(e)}")
-        
+
         if not api_key:
             raise ValueError("No API key found in LLM config")
-        
-        # Add debug logging to see what key is being used (first 8 chars only for security)
-        log.info(f"[llm] Using API key starting with: {api_key[:8]}... for provider {self.config.provider}")
-        
-        if self.config.provider.lower() == "openai":
+
+        provider = self.config.provider.lower()
+        meta = PROVIDER_REGISTRY.get(provider)
+        if not meta:
+            raise ValueError(f"Unsupported LLM provider: {provider}. Valid: {list(PROVIDER_REGISTRY)}")
+
+        log.info(f"[llm] Using API key starting with: {api_key[:8]}... for provider {provider}")
+
+        if meta["api_compat"] == "openai":
             try:
                 import openai
-                return openai.OpenAI(api_key=api_key)
             except ImportError:
                 raise RuntimeError("OpenAI package not installed. Run: pip install openai")
-        
-        elif self.config.provider.lower() == "anthropic":
+            base_url = getattr(self.config, "base_url", None) or meta["default_base_url"]
+            kwargs: Dict[str, Any] = {"api_key": api_key}
+            if base_url:
+                kwargs["base_url"] = base_url
+            return openai.OpenAI(**kwargs)
+
+        elif meta["api_compat"] == "anthropic":
             try:
                 import anthropic
-                return anthropic.Anthropic(api_key=api_key)
             except ImportError:
                 raise RuntimeError("Anthropic package not installed. Run: pip install anthropic")
-        
+            base_url = getattr(self.config, "base_url", None) or meta["default_base_url"]
+            kwargs: Dict[str, Any] = {"api_key": api_key}
+            if base_url:
+                kwargs["base_url"] = base_url
+            return anthropic.Anthropic(**kwargs)
+
         else:
-            raise ValueError(f"Unsupported LLM provider: {self.config.provider}")
+            raise ValueError(f"Unknown api_compat value '{meta['api_compat']}' for provider {provider}")
     
     def generate_response(
         self, 
@@ -62,12 +102,14 @@ class LLMService:
             if not system_prompt:
                 system_prompt = get_intelligent_system_prompt(client_id, conversation_messages)
             
-            if self.config.provider.lower() == "openai":
+            meta = PROVIDER_REGISTRY.get(self.config.provider.lower(), {})
+            api_compat = meta.get("api_compat", "openai")
+            if api_compat == "openai":
                 return self._generate_openai_response(conversation_messages, system_prompt, client_id)
-            elif self.config.provider.lower() == "anthropic":
+            elif api_compat == "anthropic":
                 return self._generate_anthropic_response(conversation_messages, system_prompt, client_id)
             else:
-                raise ValueError(f"Unsupported provider: {self.config.provider}")
+                raise ValueError(f"Unsupported api_compat '{api_compat}' for provider: {self.config.provider}")
         
         except Exception as e:
             log.error(f"[llm] Error generating response: {e}")
@@ -202,23 +244,62 @@ class LLMService:
         }
     
     def _generate_anthropic_response(
-        self, 
-        conversation_messages: List[ChatMessage], 
-        system_prompt: Optional[str], 
+        self,
+        conversation_messages: List[ChatMessage],
+        system_prompt: Optional[str],
         client_id: str
     ) -> Dict[str, Any]:
-        """Generate response using Anthropic Claude API"""
+        """Generate response using Anthropic API (or Anthropic-compatible proxy like z.ai)"""
         messages = []
-        
-        # Convert conversation to Anthropic format
-        for msg in conversation_messages:
-            if msg.role in ["user", "assistant"]:
-                messages.append({
-                    "role": msg.role,
-                    "content": msg.content
-                })
-        
-        # Define enhanced tools for Claude using all available tools
+
+        # Reconstruct conversation in proper Anthropic format, preserving tool call history.
+        # Without this, the model never sees previous command results and gets stuck repeating
+        # the startup message instead of continuing execution.
+        i = 0
+        while i < len(conversation_messages):
+            msg = conversation_messages[i]
+
+            if msg.role == "user":
+                messages.append({"role": "user", "content": msg.content})
+
+            elif msg.role == "assistant":
+                if msg.tool_name and msg.tool_args:
+                    # Assistant made a tool call — build Anthropic tool_use content block
+                    tool_id = f"call_{str(msg.id)[:32]}"
+                    try:
+                        tool_input = json.loads(msg.tool_args) if isinstance(msg.tool_args, str) else msg.tool_args
+                    except json.JSONDecodeError:
+                        tool_input = {}
+
+                    content_blocks: List[Dict[str, Any]] = []
+                    if msg.content:
+                        content_blocks.append({"type": "text", "text": msg.content})
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tool_id,
+                        "name": msg.tool_name,
+                        "input": tool_input
+                    })
+                    messages.append({"role": "assistant", "content": content_blocks})
+
+                    # Pair with the following tool result message
+                    if i + 1 < len(conversation_messages) and conversation_messages[i + 1].role == "tool":
+                        tool_msg = conversation_messages[i + 1]
+                        messages.append({
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": tool_id,
+                                "content": tool_msg.content or ""
+                            }]
+                        })
+                        i += 1  # consumed the tool message
+                else:
+                    messages.append({"role": "assistant", "content": msg.content})
+            # skip "system" and orphan "tool" messages
+
+            i += 1
+
         tools = []
         for tool_name, tool_def in AVAILABLE_TOOLS.items():
             tools.append({
@@ -226,11 +307,11 @@ class LLMService:
                 "description": tool_def["description"],
                 "input_schema": tool_def["parameters"]
             })
-        
+
         try:
             response = self.client.messages.create(
                 model=self.config.model,
-                max_tokens=1024,
+                max_tokens=8192,
                 temperature=self.config.temperature,
                 system=system_prompt or "You are a helpful AI assistant for Windows system administration with access to powerful PowerShell tools.",
                 messages=messages,
@@ -239,25 +320,82 @@ class LLMService:
         except Exception as e:
             log.error(f"[llm] Anthropic API call failed: {e}")
             raise e
-        
-        # Check if tool was used
-        if response.content and len(response.content) > 0:
-            content_block = response.content[0]
-            
-            if hasattr(content_block, 'type') and content_block.type == 'tool_use':
+
+        log.info(f"[llm] Anthropic response: stop_reason={response.stop_reason}, "
+                 f"blocks={[getattr(b, 'type', '?') for b in response.content]}")
+
+        # Find tool_use block anywhere in content — the model often returns a text block
+        # BEFORE the tool_use block, so checking only content[0] misses the tool call.
+        tool_block = next(
+            (b for b in response.content if getattr(b, "type", None) == "tool_use"),
+            None
+        )
+
+        if tool_block is not None or response.stop_reason == "tool_use":
+            if tool_block is not None:
+                text_parts = [
+                    b.text for b in response.content
+                    if getattr(b, "type", None) == "text" and hasattr(b, "text")
+                ]
                 return {
-                    "content": f"I'll execute the {content_block.name} tool.",
-                    "tool_name": content_block.name,
-                    "tool_args": json.dumps(content_block.input)
+                    "content": " ".join(text_parts) if text_parts else f"Executing {tool_block.name}...",
+                    "tool_name": tool_block.name,
+                    "tool_args": json.dumps(tool_block.input)
                 }
-            else:
+
+        # No tool use — collect all text blocks
+        text_parts = [
+            b.text for b in response.content
+            if hasattr(b, "text") and b.text
+        ]
+        full_text = "\n".join(text_parts) if text_parts else ""
+
+        # Fallback: GLM via z.ai may not translate its native tool call format
+        # to proper Anthropic tool_use blocks — parse it from the text instead.
+        if full_text:
+            parsed = self._parse_text_based_tool_call(full_text)
+            if parsed:
                 return {
-                    "content": content_block.text if hasattr(content_block, 'text') else str(content_block)
+                    "content": f"Executing {parsed['tool_name']}...",
+                    "tool_name": parsed["tool_name"],
+                    "tool_args": json.dumps(parsed["args"])
                 }
-        
+
         return {
-            "content": "I apologize, but I couldn't generate a response."
+            "content": full_text or "I couldn't generate a response."
         }
+
+    def _parse_text_based_tool_call(self, text: str) -> Optional[Dict[str, Any]]:
+        """Parse GLM's text-based tool call formats when z.ai doesn't produce proper tool_use blocks."""
+        # Format 1: XML key/value pairs — GLM-5.2 via z.ai observed format:
+        #   [prefix] tool_name<arg_key>param</arg_key><arg_value>val</arg_value>...
+        if "<arg_key>" in text and "<arg_value>" in text:
+            for tool_name in AVAILABLE_TOOLS:
+                if tool_name in text:
+                    pairs = re.findall(
+                        r"<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>",
+                        text, re.DOTALL
+                    )
+                    if pairs:
+                        args = {k.strip(): v.strip() for k, v in pairs}
+                        log.info(f"[llm] Parsed GLM XML tool call: {tool_name}({list(args.keys())})")
+                        return {"tool_name": tool_name, "args": args}
+
+        # Format 2: JSON inside <tool_call> tags — GLM-4 native format:
+        #   <tool_call>{"name": "fn", "arguments": {...}}</tool_call>
+        tool_call_match = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.DOTALL)
+        if tool_call_match:
+            try:
+                call_data = json.loads(tool_call_match.group(1))
+                tool_name = call_data.get("name") or call_data.get("function")
+                arguments = call_data.get("arguments") or call_data.get("parameters") or {}
+                if tool_name and tool_name in AVAILABLE_TOOLS:
+                    log.info(f"[llm] Parsed GLM JSON tool call: {tool_name}({list(arguments.keys())})")
+                    return {"tool_name": tool_name, "args": arguments}
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+        return None
     
     def execute_tool(
         self, 

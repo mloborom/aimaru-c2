@@ -2,6 +2,12 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import MCPClientBuilder from '../components/MCPClientBuilder'
+import {
+  ATTACK_TACTICS, TACTIC_COLORS, TECHNIQUE_TO_TACTIC, TECHNIQUE_NAMES,
+  parseMessagesForTTPs, getTacticStatus,
+  getFreeSystemPrompt, getGuideSystemPrompt, KILL_CHAIN_BOOTSTRAP,
+  ATTACKTactic
+} from '../lib/killchain'
 
 interface ClientSummary {
   id: string
@@ -78,6 +84,7 @@ export default function Dashboard() {
   // Chat state
   const [selectedClient, setSelectedClient] = useState<string | null>(null)
   const [currentSession, setCurrentSession] = useState<string | null>(null)
+  const [chatMode, setChatMode] = useState<'free' | 'guide'>('free')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [sendingMessage, setSendingMessage] = useState(false)
@@ -103,6 +110,7 @@ export default function Dashboard() {
   const [generatedToolScript, setGeneratedToolScript] = useState<string | null>(null)
   const [toolScriptName, setToolScriptName] = useState<string>('')
   const [toolUsageInstructions, setToolUsageInstructions] = useState<string>('')
+  const [hoveredTacticId, setHoveredTacticId] = useState<string | null>(null)
 
   async function loadData() {
     if (!token) return
@@ -162,33 +170,17 @@ export default function Dashboard() {
     }
   }
 
-  async function startChatSession(clientId: string) {
+  async function startChatSession(mode: 'free' | 'guide' = chatMode) {
     if (!selectedLLMConfig) {
-      alert('Please configure an LLM model first in the settings.')
+      alert('Please configure an LLM model first in the LLM settings.')
       return
     }
+    if (!selectedClient) return
 
     try {
-      const systemPrompt = `You are an expert Windows system administrator helping to manage device: ${clientId}
-
-**Your Mission:**
-- Understand what the user actually needs from their request
-- Use the execute_powershell tool to craft precise PowerShell commands
-- Be direct and targeted - solve the specific problem asked
-- Leverage your Windows expertise to write efficient commands
-
-**Available Tool:**
-- execute_powershell: Full PowerShell access with intelligent context analysis
-
-**Approach:**
-- Think about the user's actual goal
-- Write PowerShell that directly addresses their need
-- Use appropriate safety assessment (safe/moderate/risky)
-- Explain what your commands will do
-
-The backend provides intelligent context about the environment and conversation automatically. Focus on crafting the right PowerShell solution.
-
-Device: ${clientId} | Windows via MCP Protocol`
+      const systemPrompt = mode === 'guide'
+        ? getGuideSystemPrompt(selectedClient)
+        : getFreeSystemPrompt(selectedClient)
 
       const response = await fetch('/api/chat/sessions', {
         method: 'POST',
@@ -198,7 +190,7 @@ Device: ${clientId} | Windows via MCP Protocol`
         },
         credentials: 'include',
         body: JSON.stringify({
-          client_id: clientId,
+          client_id: selectedClient,
           llm_config_id: selectedLLMConfig,
           system_prompt: systemPrompt
         })
@@ -209,11 +201,22 @@ Device: ${clientId} | Windows via MCP Protocol`
       }
 
       const session = await response.json()
+      setChatMode(mode)
       setCurrentSession(session.id)
-      setSelectedClient(clientId)
-      setActiveTab('chat')
 
-      // Load messages for this session
+      // Guide mode: send bootstrap to trigger Discovery immediately
+      if (mode === 'guide') {
+        await fetch('/api/chat/message', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify({ session_id: session.id, message: KILL_CHAIN_BOOTSTRAP })
+        })
+      }
+
       await loadSessionMessages(session.id)
 
     } catch (e: any) {
@@ -222,7 +225,7 @@ Device: ${clientId} | Windows via MCP Protocol`
     }
   }
 
-  async function loadSessionMessages(sessionId: string) {
+  async function loadSessionMessages(sessionId: string, forceScroll = false) {
     try {
       const response = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -231,15 +234,24 @@ Device: ${clientId} | Windows via MCP Protocol`
 
       if (response.ok) {
         const data = await response.json()
+
+        // Capture scroll state BEFORE React re-renders (avoids stale read after setState)
+        const container = document.querySelector('.messages-container')
+        const wasNearBottom = !container || (
+          container.scrollHeight - container.scrollTop - container.clientHeight < 150
+        )
+
         setMessages(data.messages || [])
 
-        // Auto-scroll to bottom when new messages arrive
-        setTimeout(() => {
-          const messagesContainer = document.querySelector('.messages-container')
-          if (messagesContainer) {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight
-          }
-        }, 100)
+        // Only scroll to bottom if user was already at the bottom, or explicitly forced
+        // (e.g. right after the user sends a message). If they scrolled up to read a long
+        // response, we leave their position alone.
+        if (forceScroll || wasNearBottom) {
+          setTimeout(() => {
+            const c = document.querySelector('.messages-container')
+            if (c) c.scrollTop = c.scrollHeight
+          }, 100)
+        }
       }
     } catch (e) {
       console.error('Failed to load session messages:', e)
@@ -271,12 +283,32 @@ Device: ${clientId} | Windows via MCP Protocol`
 
       setNewMessage('')
 
-      // Reload messages to get the latest conversation
-      await loadSessionMessages(currentSession)
+      // User just sent — always scroll to bottom to show their message + incoming response
+      await loadSessionMessages(currentSession, true)
 
     } catch (e: any) {
       console.error('Failed to send message:', e)
       alert(`Failed to send message: ${e.message}`)
+    } finally {
+      setSendingMessage(false)
+    }
+  }
+
+  async function jumpToTactic(tactic: ATTACKTactic) {
+    if (!currentSession || chatMode !== 'guide') return
+    const directive = `Jump to [${tactic.id}] ${tactic.name.toUpperCase()} now. Autonomously execute all relevant techniques for this tactic using execute_powershell — adapt commands based on what you already know about this target. Tag each technique as you go and output [${tactic.id}] COMPLETE when done.`
+    setSendingMessage(true)
+    try {
+      const res = await fetch('/api/chat/message', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ session_id: currentSession, message: directive })
+      })
+      if (!res.ok) throw new Error(res.statusText)
+      await loadSessionMessages(currentSession, true)
+    } catch (e: any) {
+      console.error('jumpToTactic failed:', e)
     } finally {
       setSendingMessage(false)
     }
@@ -696,7 +728,12 @@ Waiting for results...`
       <div className="flex gap-2">
         {client.connected && (
           <button
-            onClick={() => startChatSession(client.id)}
+            onClick={() => {
+              setSelectedClient(client.id)
+              setCurrentSession(null)
+              setMessages([])
+              setActiveTab('chat')
+            }}
             className="flex-1 px-3 py-2 rounded-md text-sm font-bold transition-all"
             style={{
               background: 'rgba(0, 229, 204, 0.2)',
@@ -1100,13 +1137,10 @@ Waiting for results...`
 
       {activeTab === 'chat' && (
         <div className="space-y-6">
-          {!selectedClient || !currentSession ? (
+          {/* ── No device selected ── */}
+          {!selectedClient && (
             <div className="rounded-xl overflow-hidden"
-                 style={{
-                   background: 'var(--aimaru-dark-card)',
-                   border: '1px solid var(--aimaru-dark-border)',
-                   boxShadow: '0 0 20px rgba(0, 229, 204, 0.1)'
-                 }}>
+                 style={{ background: 'var(--aimaru-dark-card)', border: '1px solid var(--aimaru-dark-border)', boxShadow: '0 0 20px rgba(0, 229, 204, 0.1)' }}>
               <div className="p-8 text-center" style={{ color: 'var(--aimaru-text-dim)' }}>
                 <div className="text-6xl mb-4">🤖</div>
                 <h3 className="text-2xl font-bold mb-3 glow-text-cyan" style={{ color: 'var(--aimaru-cyan)' }}>
@@ -1117,46 +1151,283 @@ Waiting for results...`
                 </p>
               </div>
             </div>
-          ) : (
+          )}
+
+          {/* ── Device selected, mode selector ── */}
+          {selectedClient && !currentSession && (
+            <div className="rounded-xl p-8"
+                 style={{ background: 'var(--aimaru-dark-card)', border: '1px solid var(--aimaru-dark-border)', boxShadow: '0 0 20px rgba(0, 229, 204, 0.1)' }}>
+              <div className="text-center mb-8">
+                <div className="text-5xl mb-3">🤖</div>
+                <h3 className="text-2xl font-bold glow-text-cyan uppercase tracking-wide" style={{ color: 'var(--aimaru-cyan)' }}>
+                  AI DEVICE ADMINISTRATION
+                </h3>
+                <p className="text-sm font-mono mt-2" style={{ color: 'var(--aimaru-text-dim)' }}>
+                  Target: <span style={{ color: 'var(--aimaru-text)' }}>{selectedClient}</span>
+                </p>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4 max-w-2xl mx-auto mb-8">
+                {/* Free Mode */}
+                <button
+                  onClick={() => setChatMode('free')}
+                  className="p-5 rounded-xl text-left transition-all"
+                  style={{
+                    background: chatMode === 'free' ? 'rgba(0,229,204,0.12)' : 'rgba(0,0,0,0.3)',
+                    border: `2px solid ${chatMode === 'free' ? 'var(--aimaru-cyan)' : 'var(--aimaru-dark-border)'}`,
+                    boxShadow: chatMode === 'free' ? '0 0 20px rgba(0,229,204,0.2)' : 'none'
+                  }}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-2xl">💬</span>
+                    <div>
+                      <p className="font-bold uppercase tracking-wide text-sm"
+                         style={{ color: chatMode === 'free' ? 'var(--aimaru-cyan)' : 'var(--aimaru-text)' }}>
+                        Free Mode
+                      </p>
+                      <p className="text-xs font-mono" style={{ color: 'var(--aimaru-text-dim)' }}>Standard AI chat</p>
+                    </div>
+                    {chatMode === 'free' && (
+                      <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded"
+                            style={{ background: 'rgba(0,229,204,0.2)', color: 'var(--aimaru-cyan)', border: '1px solid var(--aimaru-cyan)' }}>
+                        SELECTED
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-mono leading-relaxed" style={{ color: 'var(--aimaru-text-dim)' }}>
+                    You drive the session. Ask the AI anything — it executes PowerShell on demand.
+                    No structured flow, full flexibility.
+                  </p>
+                </button>
+
+                {/* Guide Mode */}
+                <button
+                  onClick={() => setChatMode('guide')}
+                  className="p-5 rounded-xl text-left transition-all"
+                  style={{
+                    background: chatMode === 'guide' ? 'rgba(239,68,68,0.1)' : 'rgba(0,0,0,0.3)',
+                    border: `2px solid ${chatMode === 'guide' ? '#EF4444' : 'var(--aimaru-dark-border)'}`,
+                    boxShadow: chatMode === 'guide' ? '0 0 20px rgba(239,68,68,0.2)' : 'none'
+                  }}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-2xl">⚔️</span>
+                    <div>
+                      <p className="font-bold uppercase tracking-wide text-sm"
+                         style={{ color: chatMode === 'guide' ? '#EF4444' : 'var(--aimaru-text)' }}>
+                        MITRE ATT&CK Guide
+                      </p>
+                      <p className="text-xs font-mono" style={{ color: 'var(--aimaru-text-dim)' }}>Kill chain operator</p>
+                    </div>
+                    {chatMode === 'guide' && (
+                      <span className="ml-auto text-xs font-bold px-2 py-0.5 rounded"
+                            style={{ background: 'rgba(239,68,68,0.2)', color: '#EF4444', border: '1px solid #EF4444' }}>
+                        SELECTED
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-mono leading-relaxed" style={{ color: 'var(--aimaru-text-dim)' }}>
+                    AI guides you stage by stage through all 8 MITRE ATT&CK tactics.
+                    Discovery → Privilege Escalation → Defense Evasion → Credentials → Persistence → Lateral Movement → Collection → Exfiltration.
+                  </p>
+                  <div className="flex flex-wrap gap-1 mt-3">
+                    {['TA0007','TA0004','TA0005','TA0006','TA0003','TA0008','TA0009','TA0010'].map(id => (
+                      <span key={id} className="text-xs font-mono px-1.5 py-0.5 rounded"
+                            style={{ background: `${TACTIC_COLORS[id]}18`, border: `1px solid ${TACTIC_COLORS[id]}40`, color: TACTIC_COLORS[id], fontSize: '10px' }}>
+                        {id}
+                      </span>
+                    ))}
+                  </div>
+                </button>
+              </div>
+
+              <div className="text-center">
+                <button
+                  onClick={() => startChatSession(chatMode)}
+                  disabled={!selectedLLMConfig}
+                  className="px-10 py-3 rounded-lg font-bold uppercase tracking-wide text-sm transition-all disabled:opacity-40"
+                  style={{
+                    background: chatMode === 'guide' ? 'rgba(239,68,68,0.2)' : 'rgba(0,229,204,0.2)',
+                    border: `1px solid ${chatMode === 'guide' ? '#EF4444' : 'var(--aimaru-cyan)'}`,
+                    color: chatMode === 'guide' ? '#EF4444' : 'var(--aimaru-cyan)'
+                  }}
+                  onMouseEnter={e => {
+                    if (selectedLLMConfig) {
+                      (e.currentTarget as HTMLElement).style.boxShadow = chatMode === 'guide'
+                        ? '0 0 20px rgba(239,68,68,0.4)' : '0 0 20px rgba(0,229,204,0.4)'
+                    }
+                  }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'none' }}>
+                  {chatMode === 'guide' ? '⚔️ START KILL CHAIN' : '🤖 START FREE SESSION'}
+                </button>
+                {!selectedLLMConfig && (
+                  <p className="text-xs font-mono mt-2" style={{ color: '#EF4444' }}>
+                    Configure an LLM in Settings → LLM first
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {selectedClient && currentSession && (
             <>
               {/* Chat Header */}
-              <div className="rounded-xl p-6 scan-line"
+              <div className="rounded-xl p-5 scan-line"
                    style={{
-                     background: 'linear-gradient(to right, var(--aimaru-cyan), #A855F7)',
-                     boxShadow: '0 0 30px rgba(0, 229, 204, 0.3)'
+                     background: chatMode === 'guide'
+                       ? 'linear-gradient(to right, #EF4444, #A855F7)'
+                       : 'linear-gradient(to right, var(--aimaru-cyan), #A855F7)',
+                     boxShadow: chatMode === 'guide'
+                       ? '0 0 30px rgba(239,68,68,0.3)'
+                       : '0 0 30px rgba(0,229,204,0.3)'
                    }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-2xl font-bold glow-text-cyan uppercase tracking-wide" style={{ color: '#FFF' }}>
-                      🤖 AI CHAT SESSION
+                    <h2 className="text-2xl font-bold uppercase tracking-wide" style={{ color: '#FFF' }}>
+                      {chatMode === 'guide' ? '⚔️ MITRE ATT&CK KILL CHAIN' : '🤖 AI CHAT SESSION'}
                     </h2>
                     <p className="text-sm font-mono opacity-90" style={{ color: '#FFF' }}>
-                      Device: {selectedClient} | Session: {currentSession?.substring(0, 8)}...
+                      Device: {selectedClient} | {chatMode === 'guide' ? 'Guide Mode — tactic by tactic' : 'Free Mode'} | Session: {currentSession?.substring(0, 8)}...
                     </p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setSelectedClient(null)
-                      setCurrentSession(null)
-                      setMessages([])
-                    }}
-                    className="px-4 py-2 rounded-md font-bold transition-all"
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.2)',
-                      border: '1px solid #FFF',
-                      color: '#FFF'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
-                    }}
-                  >
-                    ✕ CLOSE SESSION
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setCurrentSession(null); setMessages([]) }}
+                      className="px-3 py-1.5 rounded-md text-xs font-bold transition-all"
+                      style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.5)', color: '#FFF' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.25)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.15)' }}>
+                      ↩ NEW SESSION
+                    </button>
+                    <button
+                      onClick={() => { setSelectedClient(null); setCurrentSession(null); setMessages([]) }}
+                      className="px-3 py-1.5 rounded-md text-xs font-bold transition-all"
+                      style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.5)', color: '#FFF' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.25)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.15)' }}>
+                      ✕ CLOSE
+                    </button>
+                  </div>
                 </div>
               </div>
+
+              {/* ATT&CK Tactic Progress Bar — guide mode only */}
+              {chatMode === 'guide' && (() => {
+                const parsed = parseMessagesForTTPs(messages)
+                const hoveredTactic = ATTACK_TACTICS.find(t => t.id === hoveredTacticId) ?? null
+                return (
+                  <div className="rounded-xl p-4"
+                       style={{ background: 'var(--aimaru-dark-card)', border: '1px solid rgba(239,68,68,0.3)' }}>
+                    <p className="text-xs font-mono uppercase tracking-widest mb-3" style={{ color: 'var(--aimaru-text-dim)' }}>
+                      ATT&CK Kill Chain Progress
+                    </p>
+
+                    {/* Tactic cards row */}
+                    <div className="flex gap-2 overflow-x-auto pb-1"
+                         onMouseLeave={() => setHoveredTacticId(null)}>
+                      {ATTACK_TACTICS.map(tactic => {
+                        const status = getTacticStatus(tactic.id, parsed)
+                        const discovered = tactic.techniques.filter(t => parsed.discoveredTechniques.has(t.id)).length
+                        const isHovered = hoveredTacticId === tactic.id
+                        const color = status === 'complete' ? '#10B981' : status === 'active' ? tactic.color : 'var(--aimaru-dark-border)'
+                        const textColor = status === 'complete' ? '#10B981' : status === 'active' ? tactic.color : 'var(--aimaru-text-dim)'
+                        return (
+                          <button key={tactic.id}
+                               onClick={() => jumpToTactic(tactic)}
+                               disabled={!currentSession}
+                               title={currentSession ? `Click to execute ${tactic.name}` : 'Start a guide session first'}
+                               className="flex-shrink-0 px-3 py-2 rounded-lg text-left transition-all"
+                               style={{
+                                 background: isHovered
+                                   ? (status === 'complete' ? 'rgba(16,185,129,0.22)' : `${tactic.color}28`)
+                                   : (status === 'complete' ? 'rgba(16,185,129,0.12)' : status === 'active' ? `${tactic.color}18` : 'rgba(45,55,72,0.4)'),
+                                 border: `1px solid ${isHovered ? tactic.color : color}`,
+                                 boxShadow: isHovered ? `0 0 12px ${tactic.color}44` : 'none',
+                                 minWidth: '108px',
+                                 cursor: currentSession ? 'pointer' : 'default',
+                                 transition: 'all 0.15s ease'
+                               }}
+                               onMouseEnter={() => setHoveredTacticId(tactic.id)}>
+                            {/* ID row + technique count badge */}
+                            <div className="flex items-center justify-between gap-1">
+                              <div className="flex items-center gap-1 text-xs font-bold font-mono" style={{ color: textColor }}>
+                                {status === 'complete' && <span>✓</span>}
+                                {status === 'active' && <span>▶</span>}
+                                <span>{tactic.id}</span>
+                              </div>
+                              <span style={{
+                                fontSize: '8px', fontFamily: 'monospace', fontWeight: 700,
+                                background: `${tactic.color}1a`,
+                                color: status === 'complete' ? '#10B981' : tactic.color,
+                                border: `1px solid ${tactic.color}44`,
+                                borderRadius: '4px', padding: '1px 4px', flexShrink: 0
+                              }}>
+                                {tactic.techniques.length}
+                              </span>
+                            </div>
+
+                            {/* Tactic name */}
+                            <div className="font-mono mt-0.5" style={{ fontSize: '10px', color: textColor, opacity: 0.85 }}>
+                              {tactic.name}
+                            </div>
+
+                            {/* Progress line — only when something discovered */}
+                            {discovered > 0 && (
+                              <div className="font-mono mt-1 flex items-center gap-1" style={{ fontSize: '9px', color: '#10B981', opacity: 0.8 }}>
+                                <span>✓</span>
+                                <span>{discovered}/{tactic.techniques.length} done</span>
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Technique inspector — appears below cards when a tactic is hovered */}
+                    <div style={{
+                      minHeight: '52px',
+                      marginTop: hoveredTactic ? '10px' : '0',
+                      paddingTop: hoveredTactic ? '8px' : '0',
+                      borderTop: hoveredTactic ? `1px solid ${hoveredTactic?.color ?? 'transparent'}33` : '1px solid transparent',
+                      transition: 'all 0.15s ease',
+                      overflow: 'hidden'
+                    }}>
+                      {hoveredTactic ? (
+                        <>
+                          <p className="text-xs font-mono mb-2 flex items-center gap-2" style={{ color: hoveredTactic.color, opacity: 0.7 }}>
+                            <span style={{ fontWeight: 700 }}>{hoveredTactic.id}</span>
+                            <span style={{ opacity: 0.5 }}>·</span>
+                            <span>{hoveredTactic.name}</span>
+                            <span style={{ opacity: 0.5 }}>·</span>
+                            <span style={{ opacity: 0.6 }}>hover techniques below — click card to execute</span>
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {hoveredTactic.techniques.map(t => {
+                              const isDone = parsed.discoveredTechniques.has(t.id)
+                              return (
+                                <span key={t.id} style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                  fontSize: '9px', fontFamily: 'monospace',
+                                  background: isDone ? 'rgba(16,185,129,0.1)' : `${hoveredTactic.color}0d`,
+                                  border: `1px solid ${isDone ? '#10B981' : hoveredTactic.color}44`,
+                                  borderRadius: '4px', padding: '2px 6px',
+                                  color: isDone ? '#10B981' : hoveredTactic.color,
+                                }}>
+                                  {isDone && <span>✓</span>}
+                                  <span style={{ opacity: 0.7 }}>{t.id}</span>
+                                  <span style={{ color: 'var(--aimaru-text-dim)', opacity: 0.85 }}>{t.name}</span>
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-xs font-mono" style={{ color: 'var(--aimaru-text-dim)', opacity: 0.4 }}>
+                          Hover a tactic to inspect its techniques
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* Chat Messages */}
               <div className="rounded-xl overflow-hidden"
@@ -1251,7 +1522,7 @@ Waiting for results...`
                           sendChatMessage()
                         }
                       }}
-                      placeholder="Ask the AI to help you manage this device..."
+                      placeholder={chatMode === 'guide' ? 'Type "next" to advance to next tactic, or give a directive…' : 'Ask the AI to help you manage this device...'}
                       disabled={sendingMessage}
                       className="flex-1 px-4 py-3 rounded-lg text-sm font-mono focus:outline-none transition-all"
                       style={{
@@ -1705,40 +1976,38 @@ Waiting for results...`
               </div>
 
               <div className="space-y-3">
-                <div className="p-3 rounded-lg" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                <div className="p-3 rounded-lg" style={{ background: 'rgba(168, 85, 247, 0.07)' }}>
                   <p className="text-xs font-mono mb-2" style={{ color: 'var(--aimaru-text-dim)' }}>
                     Features:
                   </p>
                   <ul className="text-xs font-mono space-y-1" style={{ color: 'var(--aimaru-text)' }}>
-                    <li>• Semantic search capabilities</li>
-                    <li>• Context-aware filtering</li>
-                    <li>• Pattern matching</li>
-                    <li>• Export results to formats</li>
+                    <li>• Discover AI runtimes on connected clients</li>
+                    <li>• Interact with local models via C2 channel</li>
+                    <li>• Pull, remove and inspect models remotely</li>
+                    <li>• Supports Ollama, LM Studio, HuggingFace CLI</li>
                   </ul>
                 </div>
 
-                <button
-                  onClick={() => generateToolScript('ai_cli_search', { search_scope: 'all', output_format: 'json' })}
-                  disabled={generatingTool}
-                  className="w-full px-4 py-3 rounded-lg font-bold transition-all disabled:opacity-50"
+                <a
+                  href="/ai-modules"
+                  className="block w-full px-4 py-3 rounded-lg font-bold text-center transition-all"
                   style={{
                     background: 'rgba(168, 85, 247, 0.2)',
                     border: '1px solid var(--aimaru-purple)',
-                    color: 'var(--aimaru-purple)'
+                    color: 'var(--aimaru-purple)',
+                    textDecoration: 'none'
                   }}
                   onMouseEnter={(e) => {
-                    if (!generatingTool) {
-                      e.currentTarget.style.background = 'rgba(168, 85, 247, 0.3)'
-                      e.currentTarget.style.boxShadow = '0 0 20px rgba(168, 85, 247, 0.5)'
-                    }
+                    e.currentTarget.style.background = 'rgba(168, 85, 247, 0.3)'
+                    e.currentTarget.style.boxShadow = '0 0 20px rgba(168, 85, 247, 0.5)'
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = 'rgba(168, 85, 247, 0.2)'
                     e.currentTarget.style.boxShadow = 'none'
                   }}
                 >
-                  {generatingTool ? '⏳ GENERATING...' : '🔧 GENERATE SCRIPT'}
-                </button>
+                  🤖 OPEN AI MODULES
+                </a>
               </div>
             </div>
           </div>

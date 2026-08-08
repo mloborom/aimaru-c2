@@ -9,6 +9,7 @@ import Login from './pages/Login'
 import Users from './pages/Users'
 import MyKeys from './pages/MyKeys'
 import AMSIDeployment from './components/AMSIDeployment'
+import AIModules from './components/AIModules'
 import { RequireAuth } from './auth/RequireAuth'
 
 export default function App(){
@@ -24,6 +25,7 @@ export default function App(){
         <Route path="/users" element={<RequireAuth roles={["admin"]}><Users/></RequireAuth>} />
         <Route path="/my-keys" element={<RequireAuth><MyKeys/></RequireAuth>} />
         <Route path="/amsi" element={<RequireAuth roles={["admin","operator"]}><AMSIDeployment/></RequireAuth>} />
+        <Route path="/ai-modules" element={<RequireAuth roles={["admin","operator"]}><AIModules/></RequireAuth>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

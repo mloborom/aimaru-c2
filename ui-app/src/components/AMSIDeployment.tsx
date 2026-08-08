@@ -4,9 +4,9 @@ import { useAuth } from '../auth/AuthContext'
 
 interface AMSIDeploymentConfig {
   obfuscation_level: 'base64' | 'advanced' | 'elite'
+  bypass_method: 'provider' | 'ghost' | 'ghost_stealth' | 'auto'
   var_prefix: string
   function_prefix: string
-  patch_etw: boolean
   enable_verbose: boolean
 }
 
@@ -58,9 +58,9 @@ export default function AMSIDeployment() {
 
   const [config, setConfig] = useState<AMSIDeploymentConfig>({
     obfuscation_level: 'advanced',
+    bypass_method: 'auto',
     var_prefix: 'amsi',
     function_prefix: 'Invoke',
-    patch_etw: false,
     enable_verbose: false
   })
 
@@ -260,6 +260,31 @@ export default function AMSIDeployment() {
 
             <div className="space-y-4">
               <div>
+                <label className="block text-sm font-medium mb-2">Bypass Method</label>
+                <select
+                  value={config.bypass_method}
+                  onChange={(e) => setConfig(prev => ({ ...prev, bypass_method: e.target.value as any }))}
+                  className="w-full px-3 py-2 rounded-md focus:outline-none"
+                  style={{
+                    background: 'var(--aimaru-dark-surface)',
+                    border: '1px solid var(--aimaru-dark-border)',
+                    color: 'var(--aimaru-text)'
+                  }}
+                >
+                  <option value="auto">🔄 Auto - LLM polymorphic mixing (combines all 3 methods)</option>
+                  <option value="provider">🎯 Provider-Based - INvoke_AS4MS1_alt4.ps1 (Advanced provider patching with ETW)</option>
+                  <option value="ghost">👻 Ghost - D1s4bl3copy.ps1 (Lightweight AmsiScanBuffer patch)</option>
+                  <option value="ghost_stealth">🥷 Ghost Stealth - ghost_stealth.ps1 (ETW/WER patching + module overloading)</option>
+                </select>
+                <div className="mt-2 text-xs" style={{ color: 'var(--aimaru-text-dim)' }}>
+                  {config.bypass_method === 'auto' && '🔄 LLM-powered polymorphic code mixing - combines all 3 methods into unique hybrid scripts'}
+                  {config.bypass_method === 'provider' && '🎯 Provider-based AMSI patching with ETW support and verification'}
+                  {config.bypass_method === 'ghost' && '👻 Lightweight AmsiScanBuffer patching with hex-offset obfuscation'}
+                  {config.bypass_method === 'ghost_stealth' && '🥷 Stealth module overloading with ETW/WER neutering and sacrificial DLL loading'}
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium mb-2">Obfuscation Level</label>
                 <select
                   value={config.obfuscation_level}
@@ -316,15 +341,21 @@ export default function AMSIDeployment() {
               </div>
 
               <div className="space-y-2">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={config.patch_etw}
-                    onChange={(e) => setConfig(prev => ({ ...prev, patch_etw: e.target.checked }))}
-                    className="mr-2"
-                  />
-                  <span className="text-sm">Patch ETW (Event Tracing for Windows)</span>
-                </label>
+                <div className="p-3 rounded-lg" style={{
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  border: '1px solid #22C55E'
+                }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg">✅</span>
+                    <span className="text-sm font-medium" style={{ color: '#22C55E' }}>
+                      ETW Patching Enabled
+                    </span>
+                  </div>
+                  <p className="text-xs ml-7" style={{ color: 'var(--aimaru-text-dim)' }}>
+                    Event Tracing for Windows is now automatically patched for all scripts
+                  </p>
+                </div>
+
                 <label className="flex items-center">
                   <input
                     type="checkbox"
@@ -648,14 +679,39 @@ export default function AMSIDeployment() {
             borderColor: '#3B82F6'
           }}>
             <h3 className="font-semibold mb-2 flex items-center gap-2" style={{ color: '#3B82F6' }}>
-              ℹ️ Information
+              ℹ️ Bypass Methods Information
             </h3>
-            <div className="text-sm space-y-1" style={{ color: 'var(--aimaru-text)' }}>
-              <p>• AMSI bypass uses memory patching techniques</p>
-              <p>• Each script is uniquely obfuscated per deployment</p>
-              <p>• ETW patching disables Event Tracing telemetry</p>
-              <p>• Test in controlled environments before production use</p>
-              <p>• Higher obfuscation levels increase detection evasion</p>
+            <div className="text-sm space-y-2" style={{ color: 'var(--aimaru-text)' }}>
+              <div>
+                <strong className="text-purple-400">🔄 Auto Mode:</strong>
+                <p className="ml-4 text-xs" style={{ color: 'var(--aimaru-text-dim)' }}>
+                  Uses LLM to intelligently mix techniques from all 3 methods into a polymorphic hybrid script that evades signature detection. Falls back to sequential execution if LLM unavailable.
+                </p>
+              </div>
+              <div>
+                <strong className="text-blue-400">🎯 Provider-Based:</strong>
+                <p className="ml-4 text-xs" style={{ color: 'var(--aimaru-text-dim)' }}>
+                  Advanced AMSI provider patching with ETW support. Most comprehensive method.
+                </p>
+              </div>
+              <div>
+                <strong className="text-green-400">👻 Ghost:</strong>
+                <p className="ml-4 text-xs" style={{ color: 'var(--aimaru-text-dim)' }}>
+                  Lightweight AmsiScanBuffer direct patching with hex-offset string decoding.
+                </p>
+              </div>
+              <div>
+                <strong className="text-yellow-400">🥷 Ghost Stealth:</strong>
+                <p className="ml-4 text-xs" style={{ color: 'var(--aimaru-text-dim)' }}>
+                  Advanced module overloading with ETW/WER neutering and sacrificial DLL loading.
+                </p>
+              </div>
+              <hr className="my-2 opacity-30" />
+              <p className="text-xs">• Each script is uniquely obfuscated per deployment</p>
+              <p className="text-xs">• <strong>LZMA streaming loader</strong> - compresses scripts and decompresses in-memory to evade disk scanning</p>
+              <p className="text-xs">• <strong>ETW/WER patching</strong> - automatically disables telemetry for all methods</p>
+              <p className="text-xs">• Auto mode uses AI to create polymorphic variants that evade signature detection</p>
+              <p className="text-xs">• Test in controlled environments before production use</p>
             </div>
           </div>
         </div>

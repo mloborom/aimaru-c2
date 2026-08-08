@@ -93,30 +93,7 @@ export function Nav(){
                }}>
         My Keys
       </NavLink>
-      <NavLink to="/amsi" {...linkStyle({ isActive: window.location.pathname === '/amsi' })}
-               onMouseEnter={(e) => {
-                 if (window.location.pathname !== '/amsi') {
-                   e.currentTarget.style.background = 'rgba(220, 38, 38, 0.1)'
-                   e.currentTarget.style.color = 'var(--aimaru-text)'
-                 }
-               }}
-               onMouseLeave={(e) => {
-                 if (window.location.pathname !== '/amsi') {
-                   e.currentTarget.style.background = 'transparent'
-                   e.currentTarget.style.color = 'var(--aimaru-text-dim)'
-                 }
-               }}
-               style={{
-                 ...linkStyle({ isActive: window.location.pathname === '/amsi' }).style,
-                 ...(window.location.pathname === '/amsi' ? {
-                   background: 'rgba(220, 38, 38, 0.2)',
-                   borderColor: '#DC2626',
-                   color: '#DC2626',
-                   boxShadow: '0 0 15px rgba(220, 38, 38, 0.3)'
-                 } : {})
-               }}>
-        🛡️ AMSI
-      </NavLink>
+
 
       <div className="ml-3 px-3 py-1 rounded-md text-xs font-mono border"
            style={{

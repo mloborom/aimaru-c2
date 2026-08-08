@@ -89,9 +89,10 @@ class LLMConfig(Base):
     owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     name = Column(String(128), nullable=False)
-    provider = Column(String(32), nullable=False)          # e.g. "openai"
-    model = Column(String(128), nullable=False)            # e.g. "gpt-4o-mini"
-    
+    provider = Column(String(32), nullable=False)          # e.g. "openai", "zhipu"
+    model = Column(String(128), nullable=False)            # e.g. "gpt-4o-mini", "glm-4"
+    base_url = Column(Text, nullable=True)                 # Override base URL for OpenAI-compatible providers
+
     # Both columns exist in your database
     api_key = Column(Text, nullable=True)                  # Legacy plain text
     api_key_enc = Column(Text, nullable=False)             # Encrypted (required in DB)
