@@ -209,7 +209,7 @@ export function Layout({ children }: PropsWithChildren) {
                 <p className="text-xs font-mono mb-1" style={{ color: 'var(--aimaru-text-dim)' }}>
                   Open Source Repository
                 </p>
-                <a href="https://github.com/WolfMneo/aimaru-mcp"
+                <a href="https://github.com/mloborom/aimaru-c2"
                    target="_blank"
                    rel="noopener noreferrer"
                    className="text-xs font-bold font-mono hover:underline transition-all"
@@ -220,11 +220,8 @@ export function Layout({ children }: PropsWithChildren) {
                    onMouseLeave={(e) => {
                      e.currentTarget.style.textShadow = 'none'
                    }}>
-                  🔗 GitHub.com/WolfMneo/aimaru-mcp
+                  🔗 github.com/mloborom/aimaru-c2
                 </a>
-                <p className="text-xs font-mono mt-1" style={{ color: 'var(--aimaru-text-dim)' }}>
-                  (Update this URL with your actual repository)
-                </p>
               </div>
 
               {/* Security Notice */}

@@ -36,7 +36,7 @@ def now_utc() -> datetime:
 
 async def list_clients_service(
     db: Session,
-    window_seconds: int = 120
+    window_seconds: int = 30
 ) -> Dict[str, Any]:
     """List all clients with connection status and statistics
 
@@ -484,7 +484,7 @@ async def update_heartbeat_service(
 async def get_client_details_service(
     db: Session,
     client_id: str,
-    window_seconds: int = 120
+    window_seconds: int = 30
 ) -> Dict[str, Any]:
     """Get detailed information about a specific client
 

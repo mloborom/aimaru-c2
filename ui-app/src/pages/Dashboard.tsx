@@ -71,6 +71,48 @@ interface InstructionResult {
   plaintext?: string
 }
 
+// CSS for message animations
+const messageAnimationCSS = `
+  @keyframes fadeInSlide {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .message-animate {
+    animation: fadeInSlide 0.3s ease-out forwards;
+  }
+
+  .progress-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(0, 229, 204, 0.3);
+    border-top-color: #00E5CC;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+`
+
 export default function Dashboard() {
   const { token, api } = useAuth()
   const [clients, setClients] = useState<ClientSummary[]>([])
@@ -88,6 +130,7 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [sendingMessage, setSendingMessage] = useState(false)
+  const [messageAnimationIndices, setMessageAnimationIndices] = useState<Set<string>>(new Set())
   const [showDirectCommands, setShowDirectCommands] = useState(false)
   const [directCommand, setDirectCommand] = useState('')
 
@@ -622,6 +665,43 @@ Waiting for results...`
     }
   }, [currentSession, activeTab])
 
+  // SSE stream for real-time chat messages
+  useEffect(() => {
+    if (!currentSession || activeTab !== 'chat') return
+
+    const eventSource = new EventSource(`/api/chat/stream/${currentSession}?token=${encodeURIComponent(token)}`, {
+      withCredentials: true
+    })
+
+    eventSource.addEventListener('message', (event) => {
+      try {
+        const message = JSON.parse(event.data)
+        setMessages((prev) => {
+          // Check if message already exists
+          if (prev.some(m => m.id === message.id)) {
+            return prev
+          }
+          return [...prev, message]
+        })
+
+        // Auto-scroll to bottom
+        setTimeout(() => {
+          const container = document.querySelector('.messages-container')
+          if (container) container.scrollTop = container.scrollHeight
+        }, 0)
+      } catch (e) {
+        console.error('Failed to parse SSE message:', e)
+      }
+    })
+
+    eventSource.onerror = () => {
+      console.warn('[chat] SSE connection lost, falling back to polling')
+      eventSource.close()
+    }
+
+    return () => eventSource.close()
+  }, [currentSession, activeTab, token])
+
   const stats = useMemo(() => {
     const connected = clients.filter(c => c.connected)
     const disconnected = clients.filter(c => !c.connected)
@@ -958,6 +1038,7 @@ Waiting for results...`
 
   return (
     <div className="space-y-6">
+      <style>{messageAnimationCSS}</style>
       {err && (
         <div className="rounded-xl p-4 glow-cyan"
              style={{
@@ -1081,15 +1162,15 @@ Waiting for results...`
 
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          <div className="rounded-xl p-6 scan-line"
+          <div className="rounded-xl p-5 scan-line"
                style={{
-                 background: 'var(--aimaru-dark-card)',
-                 border: '1px solid var(--aimaru-dark-border)',
-                 boxShadow: '0 0 20px rgba(0, 229, 204, 0.1)'
+                 background: 'rgba(0, 229, 204, 0.15)',
+                 border: '2px solid rgba(0,229,204,0.5)',
+                 boxShadow: '0 0 30px rgba(0,229,204,0.25)'
                }}>
-            <h2 className="text-xl font-bold mb-4 glow-text-cyan uppercase tracking-wide"
-                style={{ color: 'var(--aimaru-cyan)' }}>
-              Connected Devices ({stats.connected})
+            <h2 className="text-xl font-bold mb-4 uppercase tracking-wide"
+                style={{ color: 'var(--aimaru-cyan)', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+              📡 Connected Devices ({stats.connected})
             </h2>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {clients.filter(c => c.connected).map(client => (
@@ -1105,15 +1186,15 @@ Waiting for results...`
             </div>
           </div>
 
-          <div className="rounded-xl p-6"
+          <div className="rounded-xl p-5"
                style={{
-                 background: 'var(--aimaru-dark-card)',
-                 border: '1px solid var(--aimaru-dark-border)',
-                 boxShadow: '0 0 20px rgba(0, 229, 204, 0.05)'
+                 background: 'rgba(239, 68, 68, 0.12)',
+                 border: '2px solid rgba(239,68,68,0.5)',
+                 boxShadow: '0 0 30px rgba(239,68,68,0.2)'
                }}>
             <h2 className="text-xl font-bold mb-4 uppercase tracking-wide"
-                style={{ color: 'var(--aimaru-text)' }}>
-              Offline Devices ({stats.disconnected})
+                style={{ color: '#FF6B6B', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+              ⚠️ Offline Devices ({stats.disconnected})
             </h2>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {clients.filter(c => !c.connected).map(client => (
@@ -1273,36 +1354,90 @@ Waiting for results...`
               <div className="rounded-xl p-5 scan-line"
                    style={{
                      background: chatMode === 'guide'
-                       ? 'linear-gradient(to right, #EF4444, #A855F7)'
-                       : 'linear-gradient(to right, var(--aimaru-cyan), #A855F7)',
+                       ? 'rgba(239, 68, 68, 0.18)'
+                       : 'rgba(0, 229, 204, 0.15)',
+                     border: `2px solid ${chatMode === 'guide' ? 'rgba(239,68,68,0.5)' : 'rgba(0,229,204,0.5)'}`,
                      boxShadow: chatMode === 'guide'
-                       ? '0 0 30px rgba(239,68,68,0.3)'
-                       : '0 0 30px rgba(0,229,204,0.3)'
+                       ? '0 0 30px rgba(239,68,68,0.25)'
+                       : '0 0 30px rgba(0,229,204,0.25)'
                    }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-2xl font-bold uppercase tracking-wide" style={{ color: '#FFF' }}>
+                    <h2 className="text-2xl font-bold uppercase tracking-wide" style={{ color: 'var(--aimaru-cyan)', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
                       {chatMode === 'guide' ? '⚔️ MITRE ATT&CK KILL CHAIN' : '🤖 AI CHAT SESSION'}
                     </h2>
-                    <p className="text-sm font-mono opacity-90" style={{ color: '#FFF' }}>
+                    <p className="text-sm font-mono" style={{ color: '#DDD', textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>
                       Device: {selectedClient} | {chatMode === 'guide' ? 'Guide Mode — tactic by tactic' : 'Free Mode'} | Session: {currentSession?.substring(0, 8)}...
                     </p>
+                    {/* LLM Model Info with Brand Logo */}
+                    {(() => {
+                      const session = chatSessions.find(s => s.id === currentSession)
+                      const config = llmConfigs.find(c => c.id === session?.llm_config_id)
+                      if (config) {
+                        const providerLower = config.provider.toLowerCase()
+                        const brandColors: Record<string, { bg: string, text: string, name: string }> = {
+                          'anthropic': { bg: '#6B21A8', text: '#E879F9', name: 'Claude' },
+                          'openai': { bg: '#10A37F', text: '#FFF', name: 'ChatGPT' },
+                          'zhipu': { bg: '#1E40AF', text: '#93C5FD', name: 'GLM' },
+                        }
+                        const brand = brandColors[providerLower] || { bg: '#666', text: '#CCC', name: config.provider }
+                        return (
+                          <div className="flex items-center gap-3 mt-3">
+                            <div style={{
+                              background: brand.bg,
+                              padding: '6px 10px',
+                              borderRadius: '5px',
+                              border: `1.5px solid ${brand.text}80`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              boxShadow: `0 0 12px ${brand.text}40`
+                            }}>
+                              <span style={{
+                                width: '24px',
+                                height: '24px',
+                                borderRadius: '4px',
+                                background: brand.text + '30',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                color: brand.text,
+                                border: `1px solid ${brand.text}50`
+                              }}>
+                                {brand.name.substring(0, 1)}
+                              </span>
+                              <div>
+                                <div style={{ fontSize: '12px', fontWeight: '700', color: brand.text }}>
+                                  {brand.name}
+                                </div>
+                                <div style={{ fontSize: '10px', fontWeight: '600', color: brand.text + 'BB', marginTop: '2px' }}>
+                                  {config.model}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      }
+                      return null
+                    })()}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => { setCurrentSession(null); setMessages([]) }}
                       className="px-3 py-1.5 rounded-md text-xs font-bold transition-all"
-                      style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.5)', color: '#FFF' }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.25)' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.15)' }}>
+                      style={{ background: 'rgba(0,229,204,0.1)', border: '1px solid rgba(0,229,204,0.3)', color: 'var(--aimaru-cyan)' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,229,204,0.2)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,229,204,0.1)' }}>
                       ↩ NEW SESSION
                     </button>
                     <button
                       onClick={() => { setSelectedClient(null); setCurrentSession(null); setMessages([]) }}
                       className="px-3 py-1.5 rounded-md text-xs font-bold transition-all"
-                      style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.5)', color: '#FFF' }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.25)' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.15)' }}>
+                      style={{ background: 'rgba(0,229,204,0.1)', border: '1px solid rgba(0,229,204,0.3)', color: 'var(--aimaru-cyan)' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,229,204,0.2)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,229,204,0.1)' }}>
                       ✕ CLOSE
                     </button>
                   </div>
@@ -1444,67 +1579,124 @@ Waiting for results...`
                       <p className="text-sm mt-2">Ask questions or request actions on the device</p>
                     </div>
                   ) : (
-                    messages.map((msg) => (
-                      <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] rounded-lg p-4 ${
-                          msg.role === 'user'
-                            ? 'rounded-tr-none'
-                            : 'rounded-tl-none'
-                        }`}
-                             style={{
-                               background: msg.role === 'user'
-                                 ? 'rgba(0, 229, 204, 0.2)'
-                                 : msg.role === 'tool'
-                                 ? 'rgba(168, 85, 247, 0.2)'
-                                 : 'var(--aimaru-dark-surface)',
-                               border: `1px solid ${
-                                 msg.role === 'user'
-                                   ? 'var(--aimaru-cyan)'
-                                   : msg.role === 'tool'
-                                   ? '#A855F7'
-                                   : 'var(--aimaru-dark-border)'
-                               }`,
-                               boxShadow: msg.role === 'user'
-                                 ? '0 0 15px rgba(0, 229, 204, 0.2)'
-                                 : msg.role === 'tool'
-                                 ? '0 0 15px rgba(168, 85, 247, 0.2)'
-                                 : 'none'
-                             }}>
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-lg">
-                              {msg.role === 'user' ? '👤' : msg.role === 'tool' ? '⚙️' : '🤖'}
-                            </span>
-                            <span className="font-bold text-xs uppercase tracking-wide"
-                                  style={{ color: 'var(--aimaru-text-dim)' }}>
-                              {msg.role === 'tool' ? `TOOL: ${msg.tool_name}` : msg.role.toUpperCase()}
-                            </span>
-                            <span className="text-xs font-mono ml-auto"
-                                  style={{ color: 'var(--aimaru-text-dim)' }}>
-                              {new Date(msg.created_at).toLocaleTimeString()}
-                            </span>
+                    <div className="space-y-4">
+                      {messages.map((msg, idx) => {
+                        // Only show progress spinner for ACTIVELY ONGOING operations
+                        // (not for past operations shown in history)
+                        const isProgressMsg = msg.role === 'system' && (
+                          (msg.content?.includes('Creating') && idx === messages.length - 1) ||
+                          (msg.content?.includes('Waiting') && idx === messages.length - 1) ||
+                          (msg.content?.includes('Executing') && idx === messages.length - 1)
+                        )
+
+                        const getLLMIcon = () => {
+                          const session = chatSessions.find(s => s.id === currentSession)
+                          const config = llmConfigs.find(c => c.id === session?.llm_config_id)
+                          if (!config) return '🤖'
+
+                          const provider = config.provider.toLowerCase()
+                          if (provider.includes('anthropic') || provider.includes('claude')) return '🧠'
+                          if (provider.includes('openai') || provider.includes('gpt')) return '⚡'
+                          if (provider.includes('glm') || provider.includes('zhipu')) return '✨'
+                          return '🤖'
+                        }
+
+                        const animationDelay = idx * 80
+
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} message-animate`}
+                            style={{ animationDelay: `${animationDelay}ms` }}
+                          >
+                            <div
+                              className={`max-w-[85%] rounded-lg overflow-hidden transition-all ${
+                                msg.role === 'user' ? 'rounded-tr-none' : 'rounded-tl-none'
+                              }`}
+                              style={{
+                                background: msg.role === 'user'
+                                  ? 'rgba(0, 229, 204, 0.12)'
+                                  : msg.role === 'tool'
+                                  ? 'rgba(168, 85, 247, 0.1)'
+                                  : msg.role === 'system'
+                                  ? 'rgba(100, 150, 200, 0.08)'
+                                  : 'rgba(168, 85, 247, 0.08)',
+                                border: `1px solid ${
+                                  msg.role === 'user'
+                                    ? 'rgba(0, 229, 204, 0.35)'
+                                    : msg.role === 'tool'
+                                    ? 'rgba(168, 85, 247, 0.35)'
+                                    : msg.role === 'system'
+                                    ? 'rgba(100, 150, 200, 0.25)'
+                                    : 'rgba(168, 85, 247, 0.3)'
+                                }`,
+                                boxShadow: msg.role === 'user'
+                                  ? '0 0 15px rgba(0, 229, 204, 0.15)'
+                                  : msg.role === 'tool'
+                                  ? '0 0 15px rgba(168, 85, 247, 0.12)'
+                                  : 'none'
+                              }}
+                            >
+                              {/* Professional Header */}
+                              <div
+                                className="px-4 pt-3 pb-2.5 flex items-center gap-3 border-b"
+                                style={{
+                                  borderColor: 'rgba(0, 229, 204, 0.2)',
+                                  background: 'rgba(0, 229, 204, 0.08)'
+                                }}
+                              >
+                                <span className="text-lg font-bold">
+                                  {msg.role === 'user' ? '👤' : msg.role === 'tool' ? '⚙️' : getLLMIcon()}
+                                </span>
+                                <span
+                                  className="font-bold text-xs uppercase tracking-widest flex-1"
+                                  style={{ color: msg.role === 'user' ? 'var(--aimaru-cyan)' : '#A855F7' }}
+                                >
+                                  {msg.role === 'tool' ? `${msg.tool_name}` : msg.role.toUpperCase()}
+                                </span>
+                                {isProgressMsg && <span className="progress-spinner"></span>}
+                                <span
+                                  className="text-xs font-mono"
+                                  style={{ color: 'var(--aimaru-text-dim)' }}
+                                >
+                                  {new Date(msg.created_at).toLocaleTimeString()}
+                                </span>
+                              </div>
+
+                              {/* Message Content */}
+                              <div
+                                className="px-4 py-3 text-sm whitespace-pre-wrap font-mono"
+                                style={{ color: 'var(--aimaru-text)' }}
+                              >
+                                {msg.content}
+                              </div>
+
+                              {/* Tool Arguments */}
+                              {msg.tool_args && (
+                                <details className="px-4 pb-3 text-xs">
+                                  <summary
+                                    className="cursor-pointer font-bold uppercase tracking-wide hover:text-cyan-300"
+                                    style={{ color: 'var(--aimaru-cyan)' }}
+                                  >
+                                    ▶ Arguments
+                                  </summary>
+                                  <pre
+                                    className="mt-2 p-2 rounded overflow-auto font-mono text-xs"
+                                    style={{
+                                      background: 'rgba(0, 0, 0, 0.4)',
+                                      color: 'var(--aimaru-cyan)',
+                                      border: '1px solid rgba(0, 229, 204, 0.25)'
+                                    }}
+                                  >
+                                    {msg.tool_args}
+                                  </pre>
+                                </details>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-sm whitespace-pre-wrap font-mono"
-                               style={{ color: 'var(--aimaru-text)' }}>
-                            {msg.content}
-                          </div>
-                          {msg.tool_args && (
-                            <details className="mt-2 text-xs">
-                              <summary className="cursor-pointer"
-                                       style={{ color: 'var(--aimaru-text-dim)' }}>
-                                Tool Arguments
-                              </summary>
-                              <pre className="mt-2 p-2 rounded overflow-auto"
-                                   style={{
-                                     background: 'rgba(0, 0, 0, 0.3)',
-                                     color: 'var(--aimaru-cyan)'
-                                   }}>
-                                {msg.tool_args}
-                              </pre>
-                            </details>
-                          )}
-                        </div>
-                      </div>
-                    ))
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
 
@@ -1741,15 +1933,15 @@ Waiting for results...`
       )}
 
       {activeTab === 'queue' && (
-        <div className="rounded-xl p-6"
+        <div className="rounded-xl p-5"
              style={{
-               background: 'var(--aimaru-dark-card)',
-               border: '1px solid var(--aimaru-dark-border)',
-               boxShadow: '0 0 20px rgba(0, 229, 204, 0.1)'
+               background: 'rgba(0, 229, 204, 0.15)',
+               border: '2px solid rgba(0,229,204,0.5)',
+               boxShadow: '0 0 30px rgba(0,229,204,0.25)'
              }}>
-          <h2 className="text-xl font-bold mb-4 glow-text-cyan uppercase tracking-wide"
-              style={{ color: 'var(--aimaru-cyan)' }}>
-            INSTRUCTION QUEUE
+          <h2 className="text-xl font-bold mb-4 uppercase tracking-wide"
+              style={{ color: 'var(--aimaru-cyan)', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+            📋 INSTRUCTION QUEUE
             {selectedClient && (
               <span className="text-sm font-normal ml-3" style={{ color: 'var(--aimaru-text-dim)' }}>
                 (Filtered: {selectedClient})
@@ -1863,17 +2055,17 @@ Waiting for results...`
       {activeTab === 'tools' && (
         <div className="space-y-6">
           {/* Header */}
-          <div className="rounded-xl p-6"
+          <div className="rounded-xl p-5"
                style={{
-                 background: 'var(--aimaru-dark-card)',
-                 border: '1px solid var(--aimaru-dark-border)',
-                 boxShadow: '0 0 30px rgba(168, 85, 247, 0.1)'
+                 background: 'rgba(168, 85, 247, 0.15)',
+                 border: '2px solid rgba(168,85,247,0.5)',
+                 boxShadow: '0 0 30px rgba(168,85,247,0.25)'
                }}>
-            <h2 className="text-2xl font-bold mb-2 uppercase tracking-wider"
-                style={{ color: 'var(--aimaru-purple)' }}>
+            <h2 className="text-2xl font-bold uppercase tracking-wider"
+                style={{ color: '#D8B4FE', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
               ⚡ PREDEFINED TOOLS
             </h2>
-            <p className="text-sm font-mono" style={{ color: 'var(--aimaru-text-dim)' }}>
+            <p className="text-sm font-mono" style={{ color: '#D8B4FE', textShadow: '0 1px 4px rgba(0,0,0,0.5)', marginTop: '8px' }}>
               Pre-configured security tools with PowerShell script generation
             </p>
           </div>

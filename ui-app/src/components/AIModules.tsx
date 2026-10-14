@@ -24,6 +24,13 @@ interface ParsedAITools {
   huggingface: { installed: boolean } | null
   openai_cli: { installed: boolean } | null
   claude_code: { installed: boolean; version: string; mcp_servers: string[]; global_config: boolean } | null
+  claude_app: { installed: boolean; version: string; debug?: string } | null
+  vscode: { installed: boolean; version: string; extensions: string[]; debug?: string } | null
+  cursor: { installed: boolean; version: string } | null
+  cline: { installed: boolean } | null
+  copilot: { installed: boolean } | null
+  codex: { installed: boolean } | null
+  openai_code: { installed: boolean } | null
   open_ports: number[]
   services: string[]
 }
@@ -38,6 +45,7 @@ interface InstructionResult {
   id: string
   status: string
   result_plain?: string
+  plaintext?: string
   completed_at?: string
 }
 
@@ -196,24 +204,221 @@ $out.huggingface = @{ installed = [bool]$hf }
 $oai = Get-Command openai -ErrorAction SilentlyContinue
 $out.openai_cli = @{ installed = [bool]$oai }
 
-# Claude Code CLI
+# Claude Code CLI & VSCode Extension
 $cc = Get-Command claude -ErrorAction SilentlyContinue
+$claudeCodeDir = "$env:USERPROFILE\.claude"
+$claudeCodeInstalled = $false
+$ccVer = ""
+$mcpServers = @()
+$hasGlobal = $false
+
+# Check for Claude CLI
 if ($cc) {
+  $claudeCodeInstalled = $true
   $ccVer = & claude --version 2>&1 | Out-String
-  $mcpServers = @()
-  $hasGlobal = $false
-  $settingsPath = "$env:USERPROFILE\.claude\settings.json"
-  if (Test-Path $settingsPath) {
-    $hasGlobal = $true
+}
+
+# Check for Claude Code VSCode extension (even if CLI not in PATH)
+if (Test-Path $claudeCodeDir) {
+  $claudeCodeInstalled = $true
+  if (-not $ccVer) {
+    $ccVer = "vscode-extension-detected"
+  }
+}
+
+# Check for settings.json
+$settingsPath = "$claudeCodeDir\settings.json"
+if (Test-Path $settingsPath) {
+  $hasGlobal = $true
+  try {
+    $s = Get-Content $settingsPath -Raw | ConvertFrom-Json
+    if ($s.mcpServers) { $mcpServers = @($s.mcpServers.PSObject.Properties.Name) }
+  } catch {}
+}
+
+$out.claude_code = @{ installed = $claudeCodeInstalled; version = if ($ccVer) { $ccVer.Trim() } else { "" }; mcp_servers = $mcpServers; global_config = $hasGlobal }
+
+# Claude Desktop App - check multiple install locations
+$claudeApp = $false
+$claudeExePath = ""
+$claudeVer = ""
+$claudeDebug = @()
+
+# Priority 1: Check executable paths
+$claudePaths = @()
+if ($env:LOCALAPPDATA) { $claudePaths += "$env:LOCALAPPDATA\Programs\Claude\Claude.exe" }
+if ($env:ProgramFiles) { $claudePaths += "$env:ProgramFiles\Claude\Claude.exe" }
+$pf86 = [System.Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+if ($pf86) { $claudePaths += "$pf86\Claude\Claude.exe" }
+
+# Priority 2: Check package containers for executable
+$packagePath = "$env:LOCALAPPDATA\Packages"
+if ($packagePath -and (Test-Path $packagePath -ErrorAction SilentlyContinue)) {
+  try {
+    $claudePackages = @(Get-ChildItem -Path $packagePath -Filter "Claude_*" -Directory -ErrorAction SilentlyContinue)
+    $claudeDebug += "Found $($claudePackages.Count) Claude packages"
+    foreach ($pkg in $claudePackages) {
+      if ($pkg.FullName) {
+        $claudePaths += "$($pkg.FullName)\LocalCache\Roaming\Claude\Claude.exe"
+        $claudeDebug += "Added package exe: $($pkg.FullName)"
+      }
+    }
+  } catch { $claudeDebug += "Error scanning packages: $_" }
+}
+
+# Try to find executable
+foreach ($path in $claudePaths) {
+  if ($path -and (Test-Path $path -ErrorAction SilentlyContinue)) {
+    $claudeApp = $true
+    $claudeExePath = $path
+    $claudeDebug += "FOUND EXE: $path"
+    break
+  }
+}
+
+# Priority 3: Check data directories (indicates installation even without exe)
+if (-not $claudeApp) {
+  $claudeDataPaths = @()
+  if ($env:APPDATA) { $claudeDataPaths += "$env:APPDATA\Claude" }
+  if ($env:USERPROFILE) { $claudeDataPaths += "$env:USERPROFILE\.claude" }
+
+  # Add package container data paths
+  if ($packagePath -and (Test-Path $packagePath -ErrorAction SilentlyContinue)) {
     try {
-      $s = Get-Content $settingsPath -Raw | ConvertFrom-Json
-      if ($s.mcpServers) { $mcpServers = @($s.mcpServers.PSObject.Properties.Name) }
+      $claudePackages = @(Get-ChildItem -Path $packagePath -Filter "Claude_*" -Directory -ErrorAction SilentlyContinue)
+      foreach ($pkg in $claudePackages) {
+        if ($pkg.FullName) {
+          $claudeDataPaths += "$($pkg.FullName)\LocalCache\Local\Claude"
+          $claudeDataPaths += "$($pkg.FullName)\LocalCache\Roaming\Claude"
+          $claudeDataPaths += "$($pkg.FullName)\AppData\Local\Claude"
+        }
+      }
     } catch {}
   }
-  $out.claude_code = @{ installed = $true; version = $ccVer.Trim(); mcp_servers = $mcpServers; global_config = $hasGlobal }
-} else {
-  $out.claude_code = @{ installed = $false; version = ""; mcp_servers = @(); global_config = $false }
+
+  $claudeDebug += "Checking data paths: $($claudeDataPaths.Count) total"
+  foreach ($dataPath in $claudeDataPaths) {
+    if ($dataPath -and (Test-Path $dataPath -ErrorAction SilentlyContinue)) {
+      $claudeApp = $true
+      $claudeVer = "installed"
+      $claudeDebug += "FOUND DATA: $dataPath"
+      break
+    } else {
+      $claudeDebug += "NOT FOUND: $dataPath"
+    }
+  }
 }
+
+# Get version if executable found
+if ($claudeApp -and $claudeExePath) {
+  try {
+    $ver = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($claudeExePath)
+    $claudeVer = $ver.FileVersion
+  } catch {}
+}
+
+$out.claude_app = @{
+  installed = [bool]$claudeApp
+  version = if ($claudeVer) { $claudeVer } else { "installed" }
+  debug = ($claudeDebug -join " | ")
+}
+
+# VS Code
+$vscode = Get-Command code -ErrorAction SilentlyContinue
+$vsVer = ""
+$vsExtensions = @()
+$vsDebug = @()
+
+if ($vscode) {
+  try {
+    $vsVer = & code --version 2>&1 | Select-Object -First 1 | Out-String
+    $vsDebug += "code command found in PATH"
+
+    # List all extensions and filter for AI-related ones
+    $allExt = @(& code --list-extensions 2>&1)
+    $vsDebug += "Found $($allExt.Count) total extensions"
+
+    $extList = @($allExt | Where-Object {
+      $_ -match "(anthropic\.claude|github\.copilot|cline|codeium|tabby|mistralai)"
+    })
+
+    if ($extList) {
+      $vsExtensions = $extList
+      $vsDebug += "Filtered to $($extList.Count) AI extensions: $($extList -join ', ')"
+    } else {
+      $vsDebug += "No AI extensions found in list"
+    }
+  } catch {
+    $vsDebug += "Error running code command: $_"
+
+    # Fallback: check for VSCode installation via registry or common paths
+    $pf = $env:ProgramFiles
+    $pf86 = [System.Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+    $la = $env:LOCALAPPDATA
+    $vsInstalled = (Test-Path "$pf\Microsoft VS Code\bin\code.cmd") -or (Test-Path "$pf86\Microsoft VS Code\bin\code.cmd") -or (Test-Path "$la\Programs\Microsoft VS Code\bin\code.cmd")
+    if ($vsInstalled -and -not $vscode) {
+      $vscode = $true
+      $vsVer = "installed-but-not-in-path"
+      $vsDebug += "VSCode found via path fallback"
+    }
+    $vsVer = if ($vsVer) { $vsVer } else { "" }
+    $vsExtensions = @()
+  }
+}
+$out.vscode = @{
+  installed = [bool]$vscode
+  version = $vsVer.Trim()
+  extensions = $vsExtensions
+  debug = ($vsDebug -join " | ")
+}
+
+# Cursor AI Editor
+$cursor = Get-Command cursor -ErrorAction SilentlyContinue
+if (-not $cursor) { $cursor = Test-Path "$env:LOCALAPPDATA\Programs\cursor\cursor.exe" }
+$cursorVer = ""
+if ($cursor) {
+  try {
+    if (Get-Command cursor -ErrorAction SilentlyContinue) {
+      $cursorVer = & cursor --version 2>&1 | Out-String
+    } else {
+      $ver = [System.Diagnostics.FileVersionInfo]::GetVersionInfo("$env:LOCALAPPDATA\Programs\cursor\cursor.exe")
+      $cursorVer = $ver.FileVersion
+    }
+  } catch {}
+}
+$out.cursor = @{ installed = [bool]$cursor; version = $cursorVer.Trim() }
+
+# Cline (VS Code extension) - only check if code command is available
+$clineCheck = $false
+if (Get-Command code -ErrorAction SilentlyContinue) {
+  try {
+    $clineCheck = @(& code --list-extensions 2>&1 | Where-Object { $_ -match "cline" }).Count -gt 0
+  } catch {}
+}
+$out.cline = @{ installed = $clineCheck }
+
+# GitHub Copilot - only check if code command is available
+$copilotCheck = $false
+if (Get-Command code -ErrorAction SilentlyContinue) {
+  try {
+    $copilotCheck = @(& code --list-extensions 2>&1 | Where-Object { $_ -match "copilot" }).Count -gt 0
+  } catch {}
+}
+$out.copilot = @{ installed = $copilotCheck }
+
+# OpenAI Codex
+$codex = $null
+try {
+  $codex = Get-Command codex -ErrorAction SilentlyContinue
+} catch {}
+$out.codex = @{ installed = [bool]$codex }
+
+# OpenAI Code
+$oaiCode = $null
+try {
+  $oaiCode = Get-Command openai-code -ErrorAction SilentlyContinue
+} catch {}
+$out.openai_code = @{ installed = [bool]$oaiCode }
 
 # Common AI service ports
 $ports = @(11434, 1234, 8080, 7860, 5000, 3000, 8000, 4000)
@@ -245,6 +450,17 @@ function parseDiscoveryOutput(raw: string): ParsedAITools {
         mcp_servers: Array.isArray(cc.mcp_servers) ? cc.mcp_servers : [],
         global_config: cc.global_config ?? false
       } : null,
+      claude_app: data.claude_app ?? null,
+      vscode: data.vscode ? {
+        installed: data.vscode.installed ?? false,
+        version: data.vscode.version ?? '',
+        extensions: Array.isArray(data.vscode.extensions) ? data.vscode.extensions : []
+      } : null,
+      cursor: data.cursor ?? null,
+      cline: data.cline ?? null,
+      copilot: data.copilot ?? null,
+      codex: data.codex ?? null,
+      openai_code: data.openai_code ?? null,
       open_ports: Array.isArray(data.open_ports) ? data.open_ports : [],
       services: []
     }
@@ -254,7 +470,22 @@ function parseDiscoveryOutput(raw: string): ParsedAITools {
 }
 
 function emptyParsed(): ParsedAITools {
-  return { ollama: null, lmstudio: null, huggingface: null, openai_cli: null, claude_code: null, open_ports: [], services: [] }
+  return {
+    ollama: null,
+    lmstudio: null,
+    huggingface: null,
+    openai_cli: null,
+    claude_code: null,
+    claude_app: null,
+    vscode: null,
+    cursor: null,
+    cline: null,
+    copilot: null,
+    codex: null,
+    openai_code: null,
+    open_ports: [],
+    services: []
+  }
 }
 
 function ollamaModels(raw: string): string[] {
@@ -275,6 +506,7 @@ export default function AIModules() {
   const [discovering, setDiscovering] = useState(false)
   const [discovery, setDiscovery] = useState<DiscoveryResult | null>(null)
   const [pollingDiscovery, setPollingDiscovery] = useState(false)
+  const [expandedVsCodeExtensions, setExpandedVsCodeExtensions] = useState(false)
 
   // Interact tab
   const [interactModel, setInteractModel] = useState('')
@@ -375,7 +607,7 @@ export default function AIModules() {
       setPollingDiscovery(true)
       setDiscovery({ instruction_id: id, raw_output: null, status: 'pending', parsed: null })
       waitForResult(id, (r) => {
-        const raw = r.result_plain ?? ''
+        const raw = (r.plaintext ?? r.result_plain ?? '')
         setDiscovery({
           instruction_id: id,
           raw_output: raw,
@@ -618,7 +850,7 @@ export default function AIModules() {
               AI Tool Discovery
             </h2>
             <p className="text-xs font-mono mb-5" style={{ color: 'var(--aimaru-text-dim)' }}>
-              Scans the target client for installed AI runtimes: Ollama, LM Studio, HuggingFace CLI, OpenAI CLI, and open service ports.
+              Scans for AI tools: Ollama, LM Studio, HuggingFace CLI, OpenAI CLI, Claude Code, Claude App, VS Code, Cursor IDE, Cline, Copilot, Codex, OpenAI Code, and open service ports.
             </p>
 
             <button
@@ -694,10 +926,10 @@ export default function AIModules() {
               {/* OpenAI CLI */}
               <ToolCard icon="🔑" name="OpenAI CLI" installed={discovery.parsed.openai_cli?.installed ?? false} />
 
-              {/* Claude Code */}
+              {/* Claude Code CLI */}
               <ToolCard
                 icon="🤖"
-                name="Claude Code"
+                name="Claude Code CLI"
                 installed={discovery.parsed.claude_code?.installed ?? false}
                 detail={
                   discovery.parsed.claude_code?.installed
@@ -727,6 +959,134 @@ export default function AIModules() {
                       </>
                     : null
                 }
+              />
+
+              {/* Claude App */}
+              <ToolCard
+                icon="🎨"
+                name="Claude App"
+                installed={discovery.parsed.claude_app?.installed ?? false}
+                detail={
+                  discovery.parsed.claude_app
+                    ? <>
+                        <p className="text-xs font-mono" style={{ color: 'var(--aimaru-text-dim)' }}>
+                          {discovery.parsed.claude_app.version || 'detected'}
+                        </p>
+                        {discovery.parsed.claude_app.debug && (
+                          <details className="mt-2">
+                            <summary style={{ cursor: 'pointer', color: 'var(--aimaru-cyan)', fontSize: '10px', fontFamily: 'monospace' }}>
+                              🔍 Audit Log
+                            </summary>
+                            <div className="mt-1 p-1.5 rounded text-xs font-mono whitespace-pre-wrap overflow-auto"
+                                 style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(0,229,204,0.2)', color: 'var(--aimaru-text-dim)', maxHeight: '150px' }}>
+                              {discovery.parsed.claude_app.debug}
+                            </div>
+                          </details>
+                        )}
+                      </>
+                    : null
+                }
+              />
+
+              {/* VS Code */}
+              <ToolCard
+                icon="💻"
+                name="VS Code"
+                installed={discovery.parsed.vscode?.installed ?? false}
+                detail={
+                  discovery.parsed.vscode?.installed
+                    ? <>
+                        <p className="text-xs font-mono mb-2" style={{ color: 'var(--aimaru-text-dim)' }}>
+                          {discovery.parsed.vscode!.version}
+                        </p>
+                        <div className="mt-2">
+                          <button
+                            onClick={() => setExpandedVsCodeExtensions(!expandedVsCodeExtensions)}
+                            className="w-full text-left px-2 py-1.5 rounded text-xs font-mono transition-colors"
+                            style={{
+                              background: expandedVsCodeExtensions ? 'rgba(0,229,204,0.2)' : 'rgba(0,229,204,0.1)',
+                              border: '1px solid rgba(0,229,204,0.4)',
+                              color: 'var(--aimaru-cyan)',
+                              cursor: 'pointer'
+                            }}>
+                            {expandedVsCodeExtensions ? '▼' : '▶'} AI Extensions ({discovery.parsed.vscode!.extensions.length})
+                          </button>
+                          {expandedVsCodeExtensions && (
+                            <>
+                              {discovery.parsed.vscode!.extensions.length > 0 ? (
+                                <div className="mt-2 p-2 rounded" style={{ background: 'rgba(0,150,136,0.05)', border: '1px solid rgba(0,150,136,0.2)' }}>
+                                  {discovery.parsed.vscode!.extensions.map(ext => (
+                                    <div key={ext} className="mb-1 p-1.5 rounded text-xs font-mono"
+                                         style={{ background: 'rgba(0,150,136,0.15)', border: '1px solid rgba(0,150,136,0.4)', color: '#00AA88' }}>
+                                      ✓ {ext}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="mt-2 p-2 rounded text-xs font-mono"
+                                     style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)', color: '#EF4444' }}>
+                                  No AI extensions detected
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        {discovery.parsed.vscode!.debug && (
+                          <details className="mt-2">
+                            <summary style={{ cursor: 'pointer', color: 'var(--aimaru-cyan)', fontSize: '10px', fontFamily: 'monospace' }}>
+                              🔍 Audit Log
+                            </summary>
+                            <div className="mt-1 p-1.5 rounded text-xs font-mono whitespace-pre-wrap overflow-auto"
+                                 style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(0,229,204,0.2)', color: 'var(--aimaru-text-dim)', maxHeight: '150px' }}>
+                              {discovery.parsed.vscode!.debug}
+                            </div>
+                          </details>
+                        )}
+                      </>
+                    : null
+                }
+              />
+
+              {/* Cursor */}
+              <ToolCard
+                icon="⚡"
+                name="Cursor IDE"
+                installed={discovery.parsed.cursor?.installed ?? false}
+                detail={
+                  discovery.parsed.cursor?.installed && discovery.parsed.cursor!.version
+                    ? <p className="text-xs font-mono" style={{ color: 'var(--aimaru-text-dim)' }}>
+                        {discovery.parsed.cursor!.version}
+                      </p>
+                    : null
+                }
+              />
+
+              {/* Cline */}
+              <ToolCard
+                icon="🧠"
+                name="Cline Extension"
+                installed={discovery.parsed.cline?.installed ?? false}
+              />
+
+              {/* GitHub Copilot */}
+              <ToolCard
+                icon="✨"
+                name="GitHub Copilot"
+                installed={discovery.parsed.copilot?.installed ?? false}
+              />
+
+              {/* OpenAI Codex */}
+              <ToolCard
+                icon="📝"
+                name="OpenAI Codex"
+                installed={discovery.parsed.codex?.installed ?? false}
+              />
+
+              {/* OpenAI Code */}
+              <ToolCard
+                icon="🔮"
+                name="OpenAI Code"
+                installed={discovery.parsed.openai_code?.installed ?? false}
               />
 
               {/* Open ports */}
