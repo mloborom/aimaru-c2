@@ -5,4 +5,5 @@ httpx>=0.25.0
 pycryptodome
 requests
 pydantic>=2.8.0
-mcp[cli]>=1.0.0 
+mcp[cli]>=1.21.1,<2
+reportlab>=4.0.4

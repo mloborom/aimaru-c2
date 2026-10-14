@@ -176,7 +176,7 @@ export default function LLM(){
 
   async function safeDelete(r: Cfg){
     if (r.is_active){
-      const ok = confirm(`"${r.name}" is active. Deactivate and continue to delete?`)
+      const ok = confirm(`⚠️ Delete API Key: "${r.name}"\n\nThis API key is currently active.\n\nDo you want to deactivate and delete this API key?`)
       if (!ok) return
       try { 
         await api.llmActivate(r.id, false)
@@ -209,8 +209,8 @@ export default function LLM(){
     
     const doDetach = confirm(
       usage > 0
-        ? `"${r.name}" is used by ${usage} chat session(s).\nDetach those sessions from this config and delete?`
-        : `Config is referenced by existing sessions.\nDetach references and delete?`
+        ? `⚠️ Delete API Key: "${r.name}"\n\nThis API key is currently used by ${usage} chat session(s).\n\nThese sessions will be detached from this configuration.\n\nAre you sure you want to delete this API key?`
+        : `⚠️ Delete API Key: "${r.name}"\n\nThis API key is referenced by existing chat sessions.\n\nThese sessions will be detached from this configuration.\n\nAre you sure you want to delete this API key?`
     )
     if (!doDetach) return
 
@@ -346,16 +346,26 @@ export default function LLM(){
 
           <div>
             <label className="block text-sm font-medium mb-1" style={{color: 'var(--aimaru-text)'}}>Model</label>
-            <input
+            <select
               className="w-full rounded-lg px-3 py-2"
-              placeholder={providers[form.provider]?.models[0] || 'gpt-4o-mini'}
+              style={{background: 'var(--aimaru-dark-input-bg, #1a1a1a)', color: 'var(--aimaru-text)'}}
               value={form.model}
               onChange={e=>setForm(s=>({...s, model:e.target.value}))}
-            />
-            {providers[form.provider]?.models && (
-              <div className="text-xs mt-1" style={{color: 'var(--aimaru-text-dim)'}}>
-                Suggested: {providers[form.provider].models.join(', ')}
-              </div>
+            >
+              <option value="">-- Select a model --</option>
+              {providers[form.provider]?.models?.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+              <option value="" disabled>────────────────</option>
+              <option value="custom">Custom / Other Model</option>
+            </select>
+            {form.model === 'custom' && (
+              <input
+                className="w-full rounded-lg px-3 py-2 mt-2"
+                placeholder="Enter custom model name"
+                value={form.model !== 'custom' ? form.model : ''}
+                onChange={e=>setForm(s=>({...s, model:e.target.value}))}
+              />
             )}
           </div>
 

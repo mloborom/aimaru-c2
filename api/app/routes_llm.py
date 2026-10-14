@@ -243,24 +243,41 @@ def update_config(
 
 @router.delete("/configs/{cfg_id}")
 def delete_config(
-    cfg_id: str, 
-    user: User = Depends(require_role('admin')), 
+    cfg_id: str,
+    user: User = Depends(require_role('admin')),
     db: Session = Depends(get_db)
 ):
     row = db.get(LlmConfig, UUID(cfg_id))
     if not row:
         raise HTTPException(404, "not found")
+
+    cfg_uuid = UUID(cfg_id)
+
+    # Auto-detach any sessions that reference this config
+    detach_result = db.execute(
+        update(ClientChatSession)
+        .where(ClientChatSession.llm_config_id == cfg_uuid)
+        .values(llm_config_id=None)
+    )
+    db.commit()
+    detached_count = detach_result.rowcount
+
+    # Delete the config
     try:
         db.delete(row)
         db.commit()
-        return {"ok": True}
-    except IntegrityError:
+
+        logger.info(f"[llm] Deleted config {cfg_id}, detached {detached_count} sessions")
+
+        return {
+            "ok": True,
+            "message": f"Configuration deleted. {detached_count} session(s) were detached.",
+            "detached_sessions": detached_count
+        }
+    except Exception as e:
         db.rollback()
-        # still referenced by sessions → 409 with a helpful payload
-        raise HTTPException(
-            status_code=409,
-            detail={"reason": "in_use", "hint": "Detach sessions first: POST /api/llm/configs/{id}/detach-sessions"}
-        )
+        logger.error(f"[llm] Failed to delete config {cfg_id}: {e}")
+        raise HTTPException(500, f"Failed to delete configuration: {str(e)}")
         
 @router.patch("/configs/{config_id}/activate")
 def toggle_config_active(
@@ -685,7 +702,7 @@ def debug_configs(
             (LLMConfig.owner_user_id == user.id) | (LLMConfig.owner_user_id.is_(None))
         )
     ).scalars().all()
-    
+
     result = []
     for config in configs:
         try:
@@ -693,12 +710,87 @@ def debug_configs(
             key_preview = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "short_key"
         except Exception as e:
             key_preview = f"ERROR: {str(e)}"
-        
+
         result.append({
             "id": str(config.id),
             "name": config.name,
             "is_active": config.is_active,
             "api_key_preview": key_preview
         })
-    
+
     return {"configs": result}
+
+@router.post("/debug/test-anthropic")
+def test_anthropic_directly(
+    payload: dict = Body(...),
+    user: User = Depends(require_role('admin')),
+    db: Session = Depends(get_db)
+):
+    """Debug endpoint to test Anthropic API directly with minimal request"""
+    api_key = payload.get("api_key")
+    model = payload.get("model", "claude-opus-4-8")
+
+    if not api_key:
+        raise HTTPException(400, "api_key is required")
+
+    try:
+        # Test with minimal request
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=api_key)
+
+        logger.info(f"[llm_debug] Testing Anthropic API directly")
+        logger.info(f"[llm_debug] API Key starts with: {api_key[:10]}...")
+        logger.info(f"[llm_debug] Model: {model}")
+
+        response = client.messages.create(
+            model=model,
+            max_tokens=256,
+            temperature=0.2,
+            system="You are a helpful assistant.",
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Reply with 'test successful' and nothing else."
+                }
+            ]
+        )
+
+        result_text = response.content[0].text if response.content else "No response content"
+
+        logger.info(f"[llm_debug] Test successful!")
+        logger.info(f"[llm_debug] Response: {result_text}")
+
+        return {
+            "success": True,
+            "message": "Anthropic API test successful",
+            "response": result_text,
+            "model": model,
+            "api_key_preview": f"{api_key[:10]}...{api_key[-4:]}"
+        }
+
+    except Exception as e:
+        logger.error(f"[llm_debug] Anthropic API test failed: {type(e).__name__}")
+        logger.error(f"[llm_debug] Error: {str(e)}")
+
+        # Try to extract more details
+        error_details = {
+            "error_type": type(e).__name__,
+            "error_message": str(e)
+        }
+
+        if hasattr(e, 'status_code'):
+            error_details["status_code"] = e.status_code
+        if hasattr(e, 'response'):
+            try:
+                error_details["response_snippet"] = str(e.response)[:300]
+            except:
+                pass
+
+        return {
+            "success": False,
+            "message": "Anthropic API test failed",
+            "error": error_details,
+            "model": model,
+            "api_key_preview": f"{api_key[:10]}...{api_key[-4:]}"
+        }

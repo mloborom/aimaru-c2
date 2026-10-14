@@ -405,15 +405,16 @@ export default function MCPClientBuilder() {
   return (
     <div className="space-y-6 max-w-7xl">
       {/* Header */}
-      <div className="rounded-xl p-6 scan-line"
+      <div className="rounded-xl p-5 scan-line"
            style={{
-             background: 'linear-gradient(to right, var(--aimaru-cyan), #A855F7)',
-             boxShadow: '0 0 30px rgba(0, 229, 204, 0.3)'
+             background: 'rgba(0, 229, 204, 0.15)',
+             border: `2px solid rgba(0,229,204,0.5)`,
+             boxShadow: '0 0 30px rgba(0,229,204,0.25)'
            }}>
-        <h1 className="text-2xl font-bold mb-2 glow-text-cyan uppercase tracking-wide" style={{ color: '#FFF' }}>
+        <h1 className="text-2xl font-bold uppercase tracking-wide" style={{ color: 'var(--aimaru-cyan)', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
           🔧 MCP CLIENT BUILDER
         </h1>
-        <p className="opacity-90" style={{ color: '#FFF' }}>
+        <p style={{ color: '#DDD', textShadow: '0 1px 4px rgba(0,0,0,0.5)', marginTop: '8px' }}>
           Generate customized, obfuscated PowerShell MCP clients with unique variable names and enhanced security features.
         </p>
       </div>

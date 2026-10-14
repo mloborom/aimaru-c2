@@ -445,6 +445,7 @@ export default function KillChain() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
+  const [downloadingReport, setDownloadingReport] = useState(false)
 
   const parsedTTPs = useMemo(() => parseMessagesForTTPs(messages), [messages])
   const ttpLog = useMemo(() => buildTTPLog(messages), [messages])
@@ -456,6 +457,25 @@ export default function KillChain() {
     'Authorization': `Bearer ${token}`,
     'Content-Type': 'application/json'
   })
+
+  useEffect(() => {
+    console.log('[KillChain] Component mounted. State:', {
+      sessionId,
+      messagesCount: messages.length,
+      downloadingReport,
+      hasToken: !!token,
+      selectedClient,
+      selectedLLM
+    })
+  }, [])
+
+  useEffect(() => {
+    console.log('[KillChain] Session changed:', sessionId)
+  }, [sessionId])
+
+  useEffect(() => {
+    console.log('[KillChain] Messages updated:', messages.length, 'messages')
+  }, [messages])
 
   useEffect(() => { if (token) loadData() }, [token])
 
@@ -560,6 +580,46 @@ export default function KillChain() {
     }
   }
 
+  async function downloadReport() {
+    console.log('[downloadReport] Started. sessionId:', sessionId)
+    if (!sessionId) {
+      console.error('[downloadReport] No sessionId, returning')
+      return
+    }
+    setDownloadingReport(true)
+    try {
+      const url = `/api/chat/sessions/${sessionId}/report`
+      console.log('[downloadReport] Fetching from:', url)
+      const res = await fetch(url, {
+        headers: authH()
+      })
+      console.log('[downloadReport] Response status:', res.status, res.statusText)
+      if (!res.ok) {
+        const text = await res.text()
+        console.error('[downloadReport] Error response:', text)
+        alert(`Failed to generate report: ${res.status} ${res.statusText}`)
+        return
+      }
+      const blob = await res.blob()
+      console.log('[downloadReport] Blob size:', blob.size)
+      const url_obj = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url_obj
+      a.download = `kill-chain-report-${sessionId}.pdf`
+      document.body.appendChild(a)
+      console.log('[downloadReport] Triggering download...')
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url_obj)
+      console.log('[downloadReport] Download complete!')
+    } catch (e) {
+      console.error('[downloadReport] Exception:', e)
+      alert('Failed to download report: ' + (e as Error).message)
+    } finally {
+      setDownloadingReport(false)
+    }
+  }
+
   const connectedClients = clients.filter(c => c.connected)
 
   return (
@@ -567,16 +627,56 @@ export default function KillChain() {
 
       {/* ── Header ── */}
       <div className="mb-6">
-        <div className="flex items-center gap-4 mb-2">
-          <span className="text-4xl">⚔️</span>
-          <div>
-            <h1 className="text-3xl font-bold uppercase tracking-widest"
-                style={{ color: '#EF4444', textShadow: '0 0 20px rgba(239,68,68,0.5)' }}>
-              AIMARU Kill Chain
-            </h1>
-            <p className="text-sm font-mono mt-1" style={{ color: 'var(--aimaru-text-dim)' }}>
-              MITRE ATT&CK Enterprise — Autonomous Red Team Kill Chain
-            </p>
+        <div className="flex items-center gap-4 mb-2 justify-between">
+          <div className="flex items-center gap-4">
+            <span className="text-4xl">⚔️</span>
+            <div>
+              <h1 className="text-3xl font-bold uppercase tracking-widest"
+                  style={{ color: '#EF4444', textShadow: '0 0 20px rgba(239,68,68,0.5)' }}>
+                AIMARU Kill Chain
+              </h1>
+              <p className="text-sm font-mono mt-1" style={{ color: 'var(--aimaru-text-dim)' }}>
+                MITRE ATT&CK Enterprise — Autonomous Red Team Kill Chain
+              </p>
+            </div>
+          </div>
+
+          {/* Session Info + Report Button (Always shown) */}
+          <div className="flex items-center gap-4">
+            {(() => {
+              console.log('[KillChain] Rendering report button area. sessionId:', sessionId, 'messages:', messages.length)
+              return null
+            })()}
+            {sessionId && (
+              <div className="text-right">
+                <p className="text-xs font-mono uppercase tracking-wide mb-1" style={{ color: 'var(--aimaru-text-dim)' }}>Active Model</p>
+                <p className="text-sm font-bold" style={{ color: 'var(--aimaru-cyan)' }}>
+                  {llmConfigs.find(c => c.id === selectedLLM)?.name || 'Unknown'}
+                </p>
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                console.log('[KillChain] Report button clicked!', { sessionId, messagesCount: messages.length })
+                downloadReport()
+              }}
+              disabled={!sessionId || messages.length === 0 || downloadingReport}
+              className="px-4 py-2 rounded-lg font-bold uppercase tracking-wide text-xs transition-all"
+              style={{
+                background: 'rgba(0,229,204,0.3)',
+                border: '2px solid rgba(0,229,204,0.6)',
+                color: 'var(--aimaru-cyan)',
+                opacity: (!sessionId || messages.length === 0) ? 0.6 : 1,
+                cursor: (!sessionId || messages.length === 0) ? 'not-allowed' : 'pointer',
+                display: 'inline-block',
+                visibility: 'visible'
+              }}
+              onMouseEnter={e => { if (sessionId && messages.length > 0 && !downloadingReport) (e.currentTarget as HTMLElement).style.boxShadow = '0 0 20px rgba(0,229,204,0.6)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'none' }}
+              title={!sessionId ? 'Start a kill chain first' : messages.length === 0 ? 'Send first message to enable' : 'Generate PDF report'}>
+              {downloadingReport ? '⏳' : '📊'} Report
+            </button>
           </div>
         </div>
         <div className="h-px mt-4" style={{ background: 'linear-gradient(90deg, #EF4444, transparent)' }} />
@@ -673,6 +773,17 @@ export default function KillChain() {
           <p className="text-sm font-mono mt-1" style={{ color: 'var(--aimaru-text-dim)' }}>
             All 8 ATT&CK phases executed on {selectedClient} — {ttpLog.length} techniques mapped
           </p>
+          {sessionId && (
+            <button
+              onClick={downloadReport}
+              disabled={downloadingReport}
+              className="mt-4 px-6 py-2 rounded-lg font-bold uppercase tracking-wide text-sm transition-all disabled:opacity-60"
+              style={{ background: '#10B981', color: 'white', border: 'none' }}
+              onMouseEnter={e => { if (!downloadingReport) (e.currentTarget as HTMLElement).style.boxShadow = '0 0 20px rgba(16,185,129,0.5)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'none' }}>
+              {downloadingReport ? '⏳ GENERATING...' : '📥 DOWNLOAD REPORT'}
+            </button>
+          )}
         </div>
       )}
 
